@@ -23,19 +23,19 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 		val delim: String = ",";
 		val test1 = BlockMat.fromTextFile(sc,fin,delim,matSize,bsize);
 		test1.collect.foreach(println);
-		println(test1.partitions.length)
+		/*println(test1.partitions.length)*/
 
 		val test2 = BlockMat.fromTextFile(sc,fin,delim,matSize,(1,1));
 		test2.collect.foreach(println);
-		println(test2.partitions.length)
+		/*println(test2.partitions.length)*/
 
 		val test3 = BlockMat.fromTextFile(sc,fin,delim,matSize,(4,1));
 		test2.collect.foreach(println);
-		println(test3.partitions.length)
+		/*println(test3.partitions.length)*/
 
 		val test4 = BlockMat.fromTextFile(sc,fin,delim,matSize,(1,4));
 		test4.collect.foreach(println);
-		println(test4.partitions.length)
+		/*println(test4.partitions.length)*/
 	}
 	
 }
