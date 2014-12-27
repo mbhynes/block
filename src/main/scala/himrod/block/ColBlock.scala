@@ -19,8 +19,7 @@ case class ColBlock(
 {
 	override def hashCode(): Int = (row() + col()*nrows()).toInt;
 
-	def equals(other: ColBlock): Boolean =
-	{
+	def equals(other: ColBlock): Boolean = {
 		(id == other.id) && (vec == other.vec)	
 	}
 	
@@ -33,6 +32,8 @@ case class ColBlock(
 	//=============================
 	//element-wise Vector operations 
 	//=============================
+
+	def apply(f: (BDV[Double]) => BDV[Double]): ColBlock = ColBlock(id, f(vec));
 
 	//element-wise addition
 	def +(other: ColBlock): ColBlock = 

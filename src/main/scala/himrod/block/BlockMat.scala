@@ -97,6 +97,11 @@ case class BlockMat(
 		forEach(other,multFunc);
 	}
 
+	
+	// matrix product <v,Av>
+	def matProduct(vec: BlockVec): Double = vec.dot(this.multiply(vec))
+
+	// matrix-vector multiplication
 	def multiply(vec: BlockVec): BlockVec =
 	{
 		type MatVecTuple = (Block,ColBlock)
@@ -129,7 +134,7 @@ case class BlockMat(
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
 	}
 
-	// matrix/matrix multiplication
+	// matrix-matrix multiplication
 	def multiply(other: BlockMat): BlockMat =
 	{
 		type BlockTuple = (Block,Block)
@@ -346,54 +351,6 @@ object BlockMat {
 		val f = () => BDM.fill[Double](r,c){a};
 		BlockMat.generate(sc,matSize,bsize,f);
 	}
-
-	/*def ones(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
-	/*{*/
-	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
-	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
-	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
-
-	/*	def ID(n: Int): BlockID = {*/
-	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
-	/*	}*/
-
-	/*	def newBlock(it: Iterator[(Int,Int)]) = */
-	/*	{*/
-	/*		it.map(v => Block.ones(ID(v._1),bsize));*/
-	/*	}*/
-
-	/*	val blocks = sc*/
-	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
-	/*		.map(x => (x,x))*/
-	/*		.partitionBy(new HashPartitioner(numPartitions))*/
-	/*		.mapPartitions(newBlock);*/
-
-	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
-	/*}*/
-
-	/*def zeros(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
-	/*{*/
-	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
-	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
-	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
-
-	/*	def ID(n: Int): BlockID = {*/
-	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
-	/*	}*/
-
-	/*	def newBlock(it: Iterator[(Int,Int)]) = */
-	/*	{*/
-	/*		it.map(v => Block.zeros(ID(v._1),bsize));*/
-	/*	}*/
-
-	/*	val blocks = sc*/
-	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
-	/*		.map(x => (x,x))*/
-	/*		.partitionBy(new HashPartitioner(numPartitions))*/
-	/*		.mapPartitions(newBlock);*/
-
-	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
-	/*}*/
 
 	// only works for square matrices w/ square blocks
 	def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =

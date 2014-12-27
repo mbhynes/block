@@ -124,6 +124,22 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 		vec.print();
 		result.print();
 	}
+
+	test("Matrix Inner Product")
+	{
+		val mat = BlockMat.ones(sc,matSize,bsize);
+		val vec = BlockVec.ones(sc,vecSize,vec_bsize);
+		println("Matrix Inner Product: " + mat.matProduct(vec));
+	}
+
+	test("Vector p-norm")
+	{
+		val vec = BlockVec.ones(sc,vecSize,vec_bsize);
+		println("1-norm: " + BlockVec.norm(vec,1));
+		println("2-norm: " + BlockVec.norm(vec));
+		println("3-norm: " + BlockVec.norm(vec,3));
+	}
+
 	
 	/*test("Instantiate BlockMat from file")*/
 	/*{*/

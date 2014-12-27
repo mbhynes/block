@@ -158,6 +158,15 @@ case class BlockVec(
 			throw BlockVecSizeMismatchException("BlockVecs are not similarly partitioned.");
 	}
 
+	// metrics + operations
+	def mapBlocksToScalar(f: (BDV[Double]) => Double): RDD[Double] = {
+		blocks.map(x => f(x.vec));
+	}
+
+	def mapBlocks(f: (BDV[Double]) => BDV[Double]): BlockVec = {
+		BlockVec(size,bsize,blocks.map{v => v.apply(f)} );
+	}
+
 	def print() = 
 	{
 		println("size: " + size);
@@ -296,27 +305,47 @@ object BlockVec {
 		BlockVec.generate(sc,vecSize,bsize,fillFunc);
 	}
 
-	/*def zeros(sc: SparkContext, vecSize: Long, bsize: Long): BlockVec =*/
-	/*{*/
-	/*	val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;*/
+	// numerical operations
+	def sin(v: BlockVec): BlockVec =
+	{
+		val f = (u: BDV[Double]) => breeze.numerics.sin(u);
+		v.mapBlocks(f);
+	}
 
-	/*	def ID(n: Int): BlockID = {*/
-	/*		BlockID(n.toLong % numPartitions, 0L);*/
-	/*	}*/
+	def cos(v: BlockVec): BlockVec =
+	{
+		val f = (u: BDV[Double]) => breeze.numerics.cos(u);
+		v.mapBlocks(f);
+	}
 
-	/*	def newBlock(it: Iterator[(Int,Int)]) = {*/
-	/*		it.map(v => ColBlock.zeros(ID(v._1),bsize.toInt));*/
-	/*	}*/
+	def exp(v: BlockVec): BlockVec =
+	{
+		val f = (u: BDV[Double]) => breeze.numerics.exp(u);
+		v.mapBlocks(f);
+	}
 
-	/*	val blocks = sc*/
-	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
-	/*		.map(x => (x,x))*/
-	/*		.partitionBy(new HashPartitioner(numPartitions))*/
-	/*		.mapPartitions(newBlock);*/
+	def pow(v: BlockVec, n: Double): BlockVec = 
+	{
+		val f = (u: BDV[Double]) => breeze.numerics.pow(u,n);
+		v.mapBlocks(f);
+	}
 
-	/*	BlockVec(*/
-	/*		BlockSize(numPartitions,1L),*/
-	/*		BlockSize(bsize,1L),*/
-	/*		blocks);*/
-	/*}*/
+	def sum(v: BlockVec): Double = 
+	{
+		val f = (v: BDV[Double]) => breeze.linalg.sum(v);
+
+		val result: RDD[Double] = v
+			.mapBlocksToScalar(f);
+		result.sum;
+	}
+
+	// default vector 2-norm
+	def norm(v: BlockVec): Double = norm(v,2);
+
+	//vector p-norm
+	def norm(v: BlockVec, p: Double): Double = {
+		math.pow(sum(pow(v,p)), 1.0/p);
+	}
+
+
 }		
