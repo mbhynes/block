@@ -103,6 +103,16 @@ object Block
 		Block(id,mat);
 	}
 
+	def ones(
+		id: BlockID, 
+		bsize: BlockSize) = 
+	{
+		val m = bsize.nrows.toInt;
+		val n = bsize.ncols.toInt;
+		val mat: BDM[Double] = BDM.ones(m,n);
+		Block(id,mat);
+	}
+
 	def zeros(
 		id: BlockID, 
 		bsize: BlockSize) = 

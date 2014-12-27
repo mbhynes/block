@@ -150,4 +150,11 @@ object ColBlock
 		val vec: BDV[Double] = BDV.zeros[Double](len);
 		ColBlock(id,vec);
 	}
+	def ones(
+		id: BlockID, 
+		len: Int) = 
+	{
+		val vec: BDV[Double] = BDV.ones[Double](len);
+		ColBlock(id,vec);
+	}
 }

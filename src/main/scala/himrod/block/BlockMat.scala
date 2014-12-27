@@ -1,5 +1,6 @@
 package himrod.block
 
+import breeze.linalg.{DenseVector => BDV}
 import breeze.linalg.{DenseMatrix => BDM}
 import breeze.linalg._
 import breeze.numerics
@@ -75,44 +76,61 @@ case class BlockMat(
 		else
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
 	}
-
 	def -(other: BlockMat): BlockMat =
 	{
 		def subtractFunc = (A: BDM[Double],B: BDM[Double]) => A - B
 		forEach(other,subtractFunc);
 	}
-
-	// BlockMat addition
-	def +(other: BlockMat): BlockMat = 
+	def +(other: BlockMat): BlockMat =
 	{
-		if (size == other.size && bsize == other.bsize)
+		def addFunc = (A: BDM[Double],B: BDM[Double]) => A + B
+		forEach(other,addFunc);
+	}
+	def /(other: BlockMat): BlockMat =
+	{
+		def divFunc = (A: BDM[Double],B: BDM[Double]) => A :/ B
+		forEach(other,divFunc);
+	}
+	def *(other: BlockMat): BlockMat =
+	{
+		def multFunc = (A: BDM[Double],B: BDM[Double]) => A :* B
+		forEach(other,multFunc);
+	}
+
+	def multiply(vec: BlockVec): BlockVec =
+	{
+		type MatVecTuple = (Block,ColBlock)
+		type BlockComponents = (BlockID, BDV[Double])
+
+		def makeBlock(tup: BlockComponents): ColBlock = ColBlock(tup._1,tup._2);
+
+		def multiplyBlocks(tup: MatVecTuple): BlockComponents = 
 		{
-			type BlockTuple = (BDM[Double],BDM[Double])
+			val A = tup._1;
+			val v = tup._2;
+			(A.id.product(v.id), A.mat * v.vec);
+		}
 
-			def splitBlock(M: Block): (BlockID,BDM[Double]) = (M.id, M.mat);
-			def addBlocks(tuple: (BlockID,BlockTuple)): Block =
-			{
-				val id = tuple._1;
-				val A = tuple._2._1;
-				val B = tuple._2._2;
-				val result: BDM[Double] = A+B;
-				Block(id, result)
-			}
+		if (size.innerDimEqual(vec.size) && bsize.innerDimEqual(vec.bsize))
+		{
+			val A = blocks.map(x => (x.col,x))
+			val v = vec.blocks.map(x => (x.row,x))
+			val Av: RDD[ColBlock] = A
+				.join(v) 
+				.map(tup => multiplyBlocks(tup._2))
+				.persist(StorageLevel.MEMORY_AND_DISK)
+				.partitionBy(new HashPartitioner(vec.size.nrows.toInt))
+				.reduceByKey(_ + _)
+				.map(makeBlock)
 
-			val A = blocks
-				.map(splitBlock)
-				.persist();
-			val B = other.blocks
-				.map(splitBlock)
-				.persist();
-			val result = A.join(B).map(addBlocks);
-			BlockMat(size,bsize,result)
+			BlockVec(size.product(vec.size),bsize.product(vec.bsize),Av);
 		}
 		else
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
 	}
 
-	def *(other: BlockMat) =
+	// matrix/matrix multiplication
+	def multiply(other: BlockMat): BlockMat =
 	{
 		type BlockTuple = (Block,Block)
 		type BlockComponents = (BlockID, BDM[Double])
@@ -152,6 +170,7 @@ case class BlockMat(
 			);
 	}
 
+	// print small matrices for test only
 	def print() = 
 	{
 		println("size: " + size);
@@ -203,7 +222,7 @@ object BlockMat {
 		def toBlock(x: (Long, Iterable[(Long,Double)]) ) = 
 		{
 			val id: BlockID = BlockID.fromID(x._1,matSize,bsize);
-			val A = Array.fill[Double]((bsize.nrows*bsize.ncols).toInt)(0);
+			val A = Array.ofDim[Double]((bsize.nrows*bsize.ncols).toInt);
 
 			// fill the matrix A
 			for (tuple <- x._2)
@@ -247,16 +266,6 @@ object BlockMat {
 			BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);
 		}
 
-		/*def toBDM(it: Iterator[Double]): Iterator[BDM[Double]] =*/
-		/*{*/
-			/*val b: BDM[Double] = new BDM(*/
-			/*	bsize.nrows.toInt,*/
-			/*	bsize.ncols.toInt,*/
-			/*	it.toArray*/
-			/*);*/
-			/*b;*/
-		/*}*/
-
 		def toBDM(dat: Array[Double]): BDM[Double] = 
 		{
 			new BDM(
@@ -286,24 +295,13 @@ object BlockMat {
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
-	/*def rand(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
-	/*{*/
-	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
-	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
-	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
 
-	/*	def ID(n: Int): BlockID = {*/
-	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
-	/*	}*/
-
-	/*	val blocks = sc*/
-	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
-	/*		.map(x => Block.rand(ID(x),bsize));*/
-
-	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
-	/*}*/
-
-	def zeros(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
+	// create uniform BlockMat with given generator function f()=>BDM[Double]
+	def generate(
+		sc: SparkContext,
+		matSize: BlockSize,
+		bsize: BlockSize,
+		f: () => BDM[Double] ): BlockMat =
 	{
 		val nblocksRow: Long = matSize.nrows / bsize.nrows;
 		val nblocksCol: Long = matSize.ncols / bsize.ncols;
@@ -313,9 +311,8 @@ object BlockMat {
 			BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);
 		}
 
-		def newBlock(it: Iterator[(Int,Int)]) = 
-		{
-			it.map(v => Block.zeros(ID(v._1),bsize));
+		def newBlock(it: Iterator[(Int,Int)]): Iterator[Block] = {
+			it.map(v => Block(ID(v._1), f() ));
 		}
 
 		val blocks = sc
@@ -326,6 +323,77 @@ object BlockMat {
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
+
+	def ones(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
+	{
+		val f = () => BDM.ones[Double](bsize.nrows.toInt,bsize.ncols.toInt);
+		BlockMat.generate(sc,matSize,bsize,f);
+	}
+	def zeros(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
+	{
+		val f = () => BDM.zeros[Double](bsize.nrows.toInt,bsize.ncols.toInt);
+		BlockMat.generate(sc,matSize,bsize,f);
+	}
+
+	def fill(
+		sc: SparkContext, 
+		matSize: BlockSize,
+		bsize: BlockSize,
+		a: Double): BlockMat =
+	{
+		val r = bsize.nrows.toInt;
+		val c = bsize.ncols.toInt;
+		val f = () => BDM.fill[Double](r,c){a};
+		BlockMat.generate(sc,matSize,bsize,f);
+	}
+
+	/*def ones(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
+	/*{*/
+	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
+	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
+	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
+
+	/*	def ID(n: Int): BlockID = {*/
+	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
+	/*	}*/
+
+	/*	def newBlock(it: Iterator[(Int,Int)]) = */
+	/*	{*/
+	/*		it.map(v => Block.ones(ID(v._1),bsize));*/
+	/*	}*/
+
+	/*	val blocks = sc*/
+	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
+	/*		.map(x => (x,x))*/
+	/*		.partitionBy(new HashPartitioner(numPartitions))*/
+	/*		.mapPartitions(newBlock);*/
+
+	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
+	/*}*/
+
+	/*def zeros(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
+	/*{*/
+	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
+	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
+	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
+
+	/*	def ID(n: Int): BlockID = {*/
+	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
+	/*	}*/
+
+	/*	def newBlock(it: Iterator[(Int,Int)]) = */
+	/*	{*/
+	/*		it.map(v => Block.zeros(ID(v._1),bsize));*/
+	/*	}*/
+
+	/*	val blocks = sc*/
+	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
+	/*		.map(x => (x,x))*/
+	/*		.partitionBy(new HashPartitioner(numPartitions))*/
+	/*		.mapPartitions(newBlock);*/
+
+	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
+	/*}*/
 
 	// only works for square matrices w/ square blocks
 	def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
@@ -345,52 +413,3 @@ object BlockMat {
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
 }		
-
-/*def *(other: BlockMat) =*/
-/*{*/
-/*	type BlockTuple = (List[Iterable[Block]],List[Iterable[Block]])*/
-
-/*	def inRow(b: Block, row: Int): Boolean = (b.row.toInt == row);*/
-/*	def inCol(b: Block, col: Int): Boolean = (b.col.toInt == col);*/
-
-/*	def getCol(b: Block) = b.id.col;*/
-/*	def getRow(b: Block) = b.id.row;*/
-
-/*	val nrows = other.size.nrows.toInt;*/
-/*	val B_rows: Array[RDD[Block]] = Array.ofDim[RDD[Block]](nrows);*/
-/*	for (i <- 0 to nrows-1)*/
-/*		B_rows(i) = other.blocks.filter(x => inRow(x,i))*/
-/*	*/
-/*	val AB = A.mapPartitions( { iter => */
-/*		val col: Int = iter.col.toInt*/
-/*		iter.*/
-/*	}, preservesPartitioning = false);*/
-
-/*def cartesianMultiply(tup: (BlockTuple)) =*/
-/*{*/
-/*	// loop over all blocks */
-/*	for (a <- tup._1.toList; b <- tup._2.toList)*/
-/*		yield(a*b)*/
-/*}*/
-/*Brows: Array[RDD[Block]] =*/
-/*{*/
-/*	for ()*/
-/*}*/
-
-/*val numSplits: Int = numBlocks().toInt;*/
-/*// form two key-value rdds with their blocks' row/cols as the key*/
-/*val A = blocks*/
-/*	.map(b => (getCol(b),b))*/
-/*	.groupByKey(numSplits); //RDD[(k,Seq[Block])]*/
-/*val B = other.blocks*/
-/*	.map(b => (getRow(b),b))*/
-/*	.groupByKey(numSplits); //RDD[(k,Seq[Block])]*/
-
-/*// group A,B so that A.rows match B.cols*/
-/*val C = A*/
-/*	.cogroup(B) // RDD[(k,(Seq[Block],Seq[Block])]*/
-/*	.map {x => */
-/*		val blocks = x._2*/
-/*		cartesianMultiply( (blocks._1.toList, blocks._2.toList))*/
-/*	}*/
-/*C*/

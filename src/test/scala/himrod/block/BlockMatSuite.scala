@@ -14,13 +14,13 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	Logger.getLogger("akka").setLevel(Level.WARN);
 
 	// full mat size
-	val N = 4;
-	val M = 4;
+	val N = 16;
+	val M = 16;
 	val matSize = BlockSize(N,M);
 
 	// bsize
-	val n = 2;
-	val m = 2;
+	val n = 4;
+	val m = 4;
 	val bsize = BlockSize(n,m);
 
 	// vector sizes
@@ -81,7 +81,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 		val b: Double = 10;
 		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
 		/*val test1 = BlockVec.zeros(sc,vecSize,vec_bsize)+a;*/
-		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize)+b;
+		val test2 = BlockVec.ones(sc,vecSize,vec_bsize);
 		val test3 = (test1 * test2);
 		test1.print();
 		test2.print();
@@ -94,29 +94,50 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 		val b: Double = 10;
 		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
 		/*val test1 = BlockVec.zeros(sc,vecSize,vec_bsize)+a;*/
-		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize);
+		val test2 = BlockVec.ones(sc,vecSize,vec_bsize);
 		/*test1.print()*/
 		/*test2.print()*/
-		println("dot product = " + test1.dot(test1));
+		println("dot product = " + test1.dot(test2));
+	}
+
+	test("Matrix-Vector Multiplication BlockMat")
+	{
+		//test rand generation
+		println("M-V Multiplication");
+		val mat = BlockMat.fill(sc,matSize,bsize,1);
+		val vec = BlockVec.fill(sc,vecSize,vec_bsize,1);
+		val result = mat.multiply(vec);
+
+		mat.print();
+		vec.print();
+		result.print();
+	}
+	test("Vector-Matrix Multiplication BlockMat")
+	{
+		//test rand generation
+		println("V-M Multiplication");
+		val mat = BlockMat.ones(sc,matSize,bsize);
+		val vec = BlockVec.ones(sc,vecSize,vec_bsize);
+		val result = vec.multiply(mat);
+
+		mat.print();
+		vec.print();
+		result.print();
 	}
 	
 	/*test("Instantiate BlockMat from file")*/
 	/*{*/
 	/*	val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,bsize);*/
 	/*	test1.print();*/
-	/*	/*println(test1.partitions.length)*/*/
 
 	/*	val test2 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(1,1));*/
 	/*	test2.print();*/
-	/*	/*println(test2.partitions.length)*/*/
 
 	/*	val test3 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(4,1));*/
 	/*	test3.print();*/
-	/*	/*println(test3.partitions.length)*/*/
 
 	/*	val test4 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(1,4));*/
 	/*	test4.print();*/
-	/*	/*println(test4.partitions.length)*/*/
 	/*}*/
 
 	/*test("Generate Random BlockMat")*/
