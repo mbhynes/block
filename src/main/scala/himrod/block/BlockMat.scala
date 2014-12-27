@@ -49,6 +49,39 @@ case class BlockMat(
 	def *(a: Double): BlockMat = BlockMat(size,bsize,blocks.map(_*a));
 	def /(a: Double): BlockMat = BlockMat(size,bsize,blocks.map(_/a));
 
+	//elementwise operations
+	def forEach(other: BlockMat, f: (BDM[Double],BDM[Double]) => BDM[Double]): BlockMat = 
+	{
+		type MatTuple = (BDM[Double],BDM[Double])
+
+		def applyFunc(tuple: (BlockID,MatTuple)): Block =
+		{
+			val id = tuple._1;
+			val A: BDM[Double] = tuple._2._1;
+			val B: BDM[Double] = tuple._2._2;
+			Block(id, f(A,B));
+		}
+
+		if (size == other.size && bsize == other.bsize)
+		{
+			val A = (this.unzip).persist();
+			val B = (other.unzip).persist();
+			val result = A
+				.join(B)
+				.map(applyFunc);
+
+			BlockMat(size,bsize,result)
+		}
+		else
+			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
+	}
+
+	def -(other: BlockMat): BlockMat =
+	{
+		def subtractFunc = (A: BDM[Double],B: BDM[Double]) => A - B
+		forEach(other,subtractFunc);
+	}
+
 	// BlockMat addition
 	def +(other: BlockMat): BlockMat = 
 	{

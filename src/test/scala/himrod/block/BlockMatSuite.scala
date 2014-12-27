@@ -23,24 +23,100 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	val m = 2;
 	val bsize = BlockSize(n,m);
 
-	val fin: String = "src/test/scala/himrod/block/mat_data"
+	// vector sizes
+	val vecSize: Long = 4;
+	val vec_bsize: Long = 2;
+
+	// files to read
+	val vec_fin: String = "src/test/scala/himrod/block/vec_data"
+	val mat_fin: String = "src/test/scala/himrod/block/mat_data"
 	val delim: String = ",";
+
+	test("Instantiate BlockVec from file")
+	{
+		BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize).print();
+		BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vecSize).print();
+		BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,1).print();
+	}
+
+	test("Generate Random BlockVec")
+	{
+		//test rand generation
+		val test1 = BlockVec.rand(sc,vecSize,vec_bsize);
+		test1.print();
+	}
+
+	test("BlockVec Scalar Addition/Multiplication")
+	{
+		val test = BlockVec.rand(sc,vecSize,vec_bsize);
+		test.print();
+		val a: Double = 10;
+		(test+a).print();
+		(test*a).print();
+	}
+
+	test("BlockVec (Random) Addition/Multiplication")
+	{
+		val a: Double = 2;
+		val b: Double = 10;
+		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
+		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize)+b;
+		test1.print()
+		test2.print()
+		try
+		{
+			val test3 = test1 + test2;
+			println("Success: ");
+			test3.print()
+		}
+		catch
+		{
+			case ex: BlockVecSizeMismatchException => errorMessage(ex);
+		}
+	}
+
+	test("Vector-Vector Element-Wise Multiplication")
+	{
+		val a: Double = 2;
+		val b: Double = 10;
+		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
+		/*val test1 = BlockVec.zeros(sc,vecSize,vec_bsize)+a;*/
+		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize)+b;
+		(test1 * test2).print
+	}
+	test("Vector Dot product")
+	{
+		val a: Double = 2;
+		val b: Double = 10;
+		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
+		/*val test1 = BlockVec.zeros(sc,vecSize,vec_bsize)+a;*/
+		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize)+b;
+		println("dot product = " + test1.dot(test2));
+	}
+
+	test("Vector of Different BlockSize from File")
+	{
+		val vec_bsize = BlockSize(3,2);
+		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
+		test1.print;
+	}
+	
 
 	test("Instantiate BlockMat from file")
 	{
-		val test1 = BlockMat.fromTextFile(sc,fin,delim,matSize,bsize);
+		val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,bsize);
 		test1.print();
 		/*println(test1.partitions.length)*/
 
-		val test2 = BlockMat.fromTextFile(sc,fin,delim,matSize,BlockSize(1,1));
+		val test2 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(1,1));
 		test2.print();
 		/*println(test2.partitions.length)*/
 
-		val test3 = BlockMat.fromTextFile(sc,fin,delim,matSize,BlockSize(4,1));
+		val test3 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(4,1));
 		test3.print();
 		/*println(test3.partitions.length)*/
 
-		val test4 = BlockMat.fromTextFile(sc,fin,delim,matSize,BlockSize(1,4));
+		val test4 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(1,4));
 		test4.print();
 		/*println(test4.partitions.length)*/
 	}
@@ -65,7 +141,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	{
 		val a: Double = 2;
 		val b: Double = 10;
-		val test1 = BlockMat.fromTextFile(sc,fin,delim,matSize,BlockSize(4,4));
+		val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,BlockSize(4,4));
 		val test2 = BlockMat.zeros(sc,matSize,BlockSize(4,4))+b;
 		test1.print()
 		test2.print()
@@ -90,7 +166,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	{
 		val a: Double = 2;
 		val b: Double = 10;
-		val test1 = BlockMat.fromTextFile(sc,fin,delim,matSize,bsize);
+		val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,bsize);
 		/*val test1 = BlockMat.zeros(sc,matSize,bsize)+a;*/
 		val test2 = BlockMat.zeros(sc,matSize,bsize)+b;
 		(test1 * test2).print
@@ -99,7 +175,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	{
 		val a: Double = 2;
 		val b: Double = 10;
-		val test1 = BlockMat.fromTextFile(sc,fin,delim,matSize,bsize);
+		val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,bsize);
 		/*val test1 = BlockMat.zeros(sc,matSize,bsize)+a;*/
 		val test2 = BlockMat.zeros(sc,BlockSize(4,1),BlockSize(2,1))+b;
 		test1.print;
@@ -110,7 +186,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	test("Matrix of Different BlockSize from File")
 	{
 		val bsize = BlockSize(3,2);
-		val test1 = BlockMat.fromTextFile(sc,fin,delim,matSize,bsize);
+		val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,bsize);
 		test1.print;
 	}
 	
