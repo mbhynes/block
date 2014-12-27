@@ -96,6 +96,8 @@ case class BlockVec(
 			.join(other.unzip)
 			.map(dotFunc);
 
+		println("uv has " + uv.partitions.length + " parts");
+		uv.collect.foreach(println);
 		uv.reduce(_+_);
 	}
 
@@ -226,8 +228,9 @@ object BlockVec {
 		val blocks = sc.textFile(fin, numPartitions)
 			.map { line => 
 				val tokens = line.split(delim); 
-				val id_abs: Long = tokens(0).toInt / bsize; //block number
-				val id_rel: Long = id_abs % bsize;    //position in block
+				val i: Long = tokens(0).toLong;
+				val id_abs: Long = i / bsize; //block number
+				val id_rel: Long = i % bsize;    //position in block
 				(id_abs, (id_rel,tokens(1).toDouble) );
 			}
 			// groupBy the linear block index, ensuring that each block is a partition
@@ -279,12 +282,10 @@ object BlockVec {
 
 	def zeros(sc: SparkContext, vecSize: Long, bsize: Long): BlockVec =
 	{
-		/*val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
-		/*val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
-		val numPartitions: Int = (vecSize / bsize).toInt;
+		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
 
 		def ID(n: Int): BlockID = {
-			BlockID(n.toLong % numPartitions, 1L);
+			BlockID(n.toLong % numPartitions, 0L);
 		}
 
 		def newBlock(it: Iterator[(Int,Int)]) = {
