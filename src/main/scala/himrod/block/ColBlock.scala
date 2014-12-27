@@ -12,7 +12,10 @@ import breeze.numerics
 case class ColBlockMismatchException(msg: String) extends Exception
 case class ColBlockSizeErrorException(msg: String) extends Exception
 
-case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
+case class ColBlock(
+	val id: BlockID,
+	val vec: BDV[Double]
+	) extends Serializable
 {
 	override def hashCode(): Int = (row() + col()*nrows()).toInt;
 
@@ -35,7 +38,7 @@ case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
 	def +(other: ColBlock): ColBlock = 
 	{
 		if (id != other.id)
-			throw ColBlockMismatchException("ColBlockIDs do not match: " + id + " and " + other.id);
+			throw ColBlockMismatchException("BlockIDs do not match: " + id + " and " + other.id);
 		else
 			ColBlock(id, vec + other.vec);
 	}
@@ -43,7 +46,7 @@ case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
 	def -(other: ColBlock): ColBlock = 
 	{
 		if (id != other.id)
-			throw ColBlockMismatchException("ColBlockIDs do not match: " + id + " and " + other.id);
+			throw ColBlockMismatchException("BlockIDs do not match: " + id + " and " + other.id);
 		else
 			ColBlock(id, vec - other.vec);
 	}
@@ -54,7 +57,7 @@ case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
 			throw ColBlockMismatchException("Vector inner dimensions do not match: "+size()+" and "+other.size);
 		else
 		{
-			val outerID: ColBlockID = ColBlockID(id.row,other.id.col);
+			val outerID: BlockID = BlockID(id.row,other.id.col);
 			ColBlock(outerID, vec :* other.vec);
 		}
 	}
@@ -68,7 +71,7 @@ case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
 	def dot(other: ColBlock): Double = 
 	{
 		if (id != other.id)
-			throw ColBlockMismatchException("ColBlockIDs do not match: " + id + " and " + other.id);
+			throw ColBlockMismatchException("BlockIDs do not match: " + id + " and " + other.id);
 		else
 			vec dot other.vec;
 	}
@@ -78,12 +81,12 @@ case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
 	// v' * A 
 	def *(A: Block): ColBlock =
 	{
-		if (vec.length != Block.nrows)
+		if (length() != A.nrows())
 			throw ColBlockSizeErrorException("Vector length does not match matrix inner dimensions: " + vec.length+" and "+A.size);
 		else
 		{
 			val outerID: BlockID = BlockID(id.row,A.id.col);
-			ColBlock(outerID, (vec.t * A).t);
+			ColBlock(outerID, (vec.t * A.mat).t);
 		}
 	}
 
@@ -99,6 +102,10 @@ case class ColBlock(val id: BlockID, val vec: BDV[Double]) extends Serializable
 	def length(): Long = vec.length.toLong;
 
 	def size(): BlockSize = BlockSize(vec.length.toLong,1L);
+
+	def nrows(): Long = length();
+
+	def ncols(): Long = 1L;
 
 	// check that inner prods are equal for vector-matrix multiplication
 	def innerDimEqual(A: Block): Boolean = (vec.length == A.nrows);
@@ -124,7 +131,7 @@ object ColBlock
 		len: Int, 
 		vec: Array[Double]) = 
 	{
-		val block: BDV[Double] = new BDV(len,vec);
+		val block: BDV[Double] = new BDV(vec);
 		ColBlock(id, block);
 	}
 

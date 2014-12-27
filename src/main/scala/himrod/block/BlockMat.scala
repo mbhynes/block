@@ -65,6 +65,7 @@ case class BlockMat(
 				val result: BDM[Double] = A+B;
 				Block(id, result)
 			}
+
 			val A = blocks
 				.map(splitBlock)
 				.persist();
@@ -127,6 +128,8 @@ case class BlockMat(
 		println("");
 	}
 
+	def unzip(): RDD[(BlockID,BDM[Double])] = blocks.map(x => (x.id,x.mat) )
+
 	def saveAsTextFile(fout: String) = blocks.saveAsTextFile(fout);
 
 }
@@ -167,7 +170,7 @@ object BlockMat {
 		def toBlock(x: (Long, Iterable[(Long,Double)]) ) = 
 		{
 			val id: BlockID = BlockID.fromID(x._1,matSize,bsize);
-			val A = Array.ofDim[Double]((bsize.nrows*bsize.ncols).toInt);
+			val A = Array.fill[Double]((bsize.nrows*bsize.ncols).toInt)(0);
 
 			// fill the matrix A
 			for (tuple <- x._2)

@@ -4,73 +4,16 @@ import breeze.linalg._
 import breeze.linalg.{DenseMatrix => BDM}
 import breeze.numerics
 
-/*import org.apache.spark.rdd.RDD*/
-/*import org.apache.spark.SparkContext*/
-/*import org.apache.spark.SparkContext._*/
-/*import org.apache.spark.SparkException*/
-
-
-// ====================================================================
-// define a block id as its (row,col) in a larger BlockMat:
-// 0 <= row <= num_row_blocks
-// 0 <= col <= num_col_blocks
-// ====================================================================
-/*case class BlockID(val row: Long, val col: Long) extends Serializable*/
-/*{*/
-/*	def product(other: BlockID): BlockID = BlockID(row,other.col);*/
-/**/
-/*	def transpose(): BlockID = BlockID(col,row);*/
-/**/
-/*	override def equals(other: Any): Boolean = */
-/*		other match {*/
-/*			case id: BlockID =>*/
-/*				(row == id.row) && (col == id.col)*/
-/*			case _ => false*/
-/*		};*/
-/*	*/
-/*	override def toString() = "("+row+","+col+")";*/
-/**/
-/*}*/
-/**/
-/*object BlockID {*/
-/**/
-/*	def fromID(id: Long, matSize: BlockSize, bsize: BlockSize): BlockID = */
-/*	{*/
-/*		val row: Long = (id % matSize.nrows) / bsize.nrows;*/
-/*		val col: Long = (id / matSize.ncols) / bsize.ncols;*/
-/*		BlockID(row,col);*/
-/*	}*/
-/*}*/
-
-// ====================================================================
-// define the dimensions (in rows/cols) of a block matrix
-// ====================================================================
-/*case class BlockSize(val nrows: Long, val ncols: Long) extends Serializable*/
-/*{*/
-/*	override def equals(other: Any): Boolean = */
-/*		other match {*/
-/*			case bs: BlockSize =>*/
-/*				(nrows == bs.nrows) && (ncols == bs.ncols);*/
-/*			case _ => false*/
-/*		};*/
-/**/
-/*	override def toString() = "("+nrows+","+ncols+")";*/
-/**/
-/*	def transpose(): BlockSize = BlockSize(ncols,nrows);*/
-/**/
-/*	def innerDimEqual(other: BlockSize): Boolean = (ncols == other.nrows);*/
-/**/
-/*	def product(other: BlockSize): BlockSize = BlockSize(nrows,other.ncols);*/
-/*}*/
-
 // ====================================================================
 // define a single Block as a local BreezeDenseMatrix[Double] 
-//
 // ====================================================================
 case class BlockMismatchException(msg: String) extends Exception
 case class BlockSizeErrorException(msg: String) extends Exception
 
-case class Block(val id: BlockID, val mat: BDM[Double]) extends Serializable
+case class Block(
+	val id: BlockID, 
+	val mat: BDM[Double]
+	) extends Serializable
 {
 	override def hashCode(): Int = (row() + col()*nrows()).toInt;
 

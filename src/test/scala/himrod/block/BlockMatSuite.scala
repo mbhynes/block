@@ -23,7 +23,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	val m = 2;
 	val bsize = BlockSize(n,m);
 
-	val fin: String = "src/test/scala/himrod/block/data"
+	val fin: String = "src/test/scala/himrod/block/mat_data"
 	val delim: String = ",";
 
 	test("Instantiate BlockMat from file")
