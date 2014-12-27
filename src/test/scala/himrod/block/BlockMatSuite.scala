@@ -24,8 +24,8 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	val bsize = BlockSize(n,m);
 
 	// vector sizes
-	val vecSize: Long = 4;
-	val vec_bsize: Long = 2;
+	val vecSize: Long = 16;
+	val vec_bsize: Long = 4;
 
 	// files to read
 	val vec_fin: String = "src/test/scala/himrod/block/vec_data"
@@ -84,6 +84,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize)+b;
 		(test1 * test2).print
 	}
+
 	test("Vector Dot product")
 	{
 		val a: Double = 2;
@@ -93,15 +94,7 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 		val test2 = BlockVec.zeros(sc,vecSize,vec_bsize)+b;
 		println("dot product = " + test1.dot(test2));
 	}
-
-	test("Vector of Different BlockSize from File")
-	{
-		val vec_bsize = BlockSize(3,2);
-		val test1 = BlockVec.fromTextFile(sc,vec_fin,delim,vecSize,vec_bsize);
-		test1.print;
-	}
 	
-
 	test("Instantiate BlockMat from file")
 	{
 		val test1 = BlockMat.fromTextFile(sc,mat_fin,delim,matSize,bsize);

@@ -214,8 +214,8 @@ object BlockMat {
 			Block(id,mat);
 		}
 
-		val nblocksRow: Long = matSize.nrows / bsize.nrows;
-		val nblocksCol: Long = matSize.ncols / bsize.ncols;
+		val nblocksRow: Long = (1.0 * matSize.nrows / bsize.nrows).ceil.toLong;
+		val nblocksCol: Long = (1.0 * matSize.ncols / bsize.ncols).ceil.toLong;
 		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
 
 		// convert matrix A_ij textfile to tuple (absBlockID, relBlockID, A_ij)

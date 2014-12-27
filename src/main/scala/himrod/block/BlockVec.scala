@@ -217,19 +217,18 @@ object BlockVec {
 			for (tuple <- x._2)
 				v(tuple._1.toInt) = tuple._2
 			
-			val vec: BDV[Double] = new BDV(v);
-			ColBlock(id,vec);
+			ColBlock(id,BDV(v));
 		}
 
-		val numPartitions: Int = (vecSize / bsize).toInt;
+		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
 
 		// convert vector v_i textfile to tuple (absBlockID, relBlockID, A_ij)
 		val blocks = sc.textFile(fin, numPartitions)
 			.map { line => 
 				val tokens = line.split(delim); 
-				val id_abs: Long = tokens(0).toLong;
-				val id_rel: Long = id_abs % bsize;
-				(id_abs, (id_rel,tokens(2).toDouble) );
+				val id_abs: Long = tokens(0).toInt / bsize; //block number
+				val id_rel: Long = id_abs % bsize;    //position in block
+				(id_abs, (id_rel,tokens(1).toDouble) );
 			}
 			// groupBy the linear block index, ensuring that each block is a partition
 			.groupByKey()
@@ -246,12 +245,12 @@ object BlockVec {
 	def rand(sc: SparkContext, vecSize: Long, bsize: Long): BlockVec =
 	/*def rand(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockVec =*/
 	{
-		val numPartitions: Int = (vecSize / bsize).toInt;
+		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
 		/*val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
 		/*val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
 
-		def ID(n: Int): BlockID = {
-			BlockID(n.toLong % numPartitions, 1L);
+		def toBlockID(n: Int): BlockID = {
+			BlockID(n.toLong % numPartitions, 0L);
 		}
 
 		def toBDV(dat: Array[Double]): BDV[Double] = new BDV(dat);
@@ -262,7 +261,7 @@ object BlockVec {
 			.parallelize(0 to numPartitions-1, numPartitions)
 			.map(x => (x,x))
 			.partitionBy(new HashPartitioner(numPartitions))
-			.map(x => ID(x._1))
+			.map(x => toBlockID(x._1))
 
 		val dat = normalRDD(sc,vecSize,numPartitions)
 			.glom
@@ -299,7 +298,7 @@ object BlockVec {
 			.mapPartitions(newBlock);
 
 		BlockVec(
-			BlockSize(vecSize,1L),
+			BlockSize(numPartitions,1L),
 			BlockSize(bsize,1L),
 			blocks);
 	}
