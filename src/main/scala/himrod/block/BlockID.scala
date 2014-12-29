@@ -13,39 +13,42 @@ package himrod.block
 // 0 <= row <= num_row_blocks
 // 0 <= col <= num_col_blocks
 // ====================================================================
-case class BlockID(val row: Long, val col: Long) extends Serializable
+case class BlockID(
+	row: Long, 
+	col: Long, 
+	nrows: Long,  //number of rows (blocks)
+	ncols: Long)  //number of cols (blocks)
+	extends Serializable
 {
-	def product(other: BlockID): BlockID = BlockID(row,other.col);
+	def product(other: BlockID): BlockID = BlockID(row,other.col,nrows,other.ncols);
 
-	def transpose(): BlockID = BlockID(col,row);
+	def transpose(): BlockID = BlockID(col,row,ncols,nrows);
 
 	override def equals(other: Any): Boolean = 
 		other match {
 			case id: BlockID =>
-				(row == id.row) && (col == id.col)
+				(row == id.row) && (col == id.col) && 
+					(nrows == id.nrows) && (ncols == id.ncols);
 			case _ => false
 		};
 	
+	override def hashCode(): Int = {
+		(col * nrows + row).toInt;
+	}
+
 	override def toString() = "("+row+","+col+")";
 
 }
 
 object BlockID {
-
 	def fromID(id: Long, matSize: BlockSize, bsize: BlockSize): BlockID = 
 	{
 		val row: Long = (id % matSize.nrows) / bsize.nrows;
 		val col: Long = (id / matSize.ncols) / bsize.ncols;
-		BlockID(row,col);
+		val nrows: Long = (1.0 * matSize.nrows / bsize.nrows).ceil.toLong;
+		val ncols: Long = (1.0 * matSize.ncols / bsize.ncols).ceil.toLong;
+		BlockID(row,col,nrows,ncols);
 	}
-
-	// don't use this yet
-	/*def fromIndex(row: Long, col: Long, matSize: BlockSize, bsize: BlockSize): BlockID = */
-	/*{*/
-	/*	val row: Long = (id % matSize.nrows) / bsize.nrows;*/
-	/*	val col: Long = matSize.ncols * (id / matSize.ncols) / bsize.ncols;*/
-	/*	BlockID(row,col);*/
-	/*}*/
 }
 
 

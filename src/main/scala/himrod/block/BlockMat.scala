@@ -27,7 +27,7 @@ case class BlockMatSizeMismatchException(msg: String) extends Exception
 case class BlockMat(
 	val size: BlockSize, // size of matrix in blocks
 	val bsize: BlockSize, //size of uniform blocks
-	val blocks: RDD[Block]
+	val blocks: RDD[(BlockID,BDM[Double])]
 	) extends Serializable 
 {
 	def nrows(): Long = size.nrows;
@@ -35,40 +35,60 @@ case class BlockMat(
 	def brows(): Long = bsize.nrows;
 	def bcols(): Long = bsize.ncols;
 
-	def getBlock(id: BlockID): RDD[Block] = {
-		blocks.filter(x => x.id == id)
-	}
-	def getBlock(row: Long, col: Long): RDD[Block] = {
-		blocks.filter(x => x.id == BlockID(row,col))
-	}
+	/*def getBlock(id: BlockID): RDD[Block] = {*/
+	/*	blocks.filter(x => x.id == id)*/
+	/*}*/
+	/*def getBlock(row: Long, col: Long): RDD[Block] = {*/
+	/*	blocks.filter(x => x.id == BlockID(row,col))*/
+	/*}*/
 
 	def numBlocks(): Long = size.nrows * size.ncols; 
 
 	// scalar operations
-	def +(a: Double): BlockMat = BlockMat(size,bsize,blocks.map(_+a));
-	def -(a: Double): BlockMat = BlockMat(size,bsize,blocks.map(_-a));
-	def *(a: Double): BlockMat = BlockMat(size,bsize,blocks.map(_*a));
-	def /(a: Double): BlockMat = BlockMat(size,bsize,blocks.map(_/a));
+	def scalarMap(f: (BDM[Double]) => BDM[Double]): BlockMat = {
+		BlockMat(size,bsize,blocks.mapValues{f} );
+	}
 
+	def +(a: Double): BlockMat = 
+	{
+		val f = (m: BDM[Double]) => m+a;
+		scalarMap(f);
+	}
+	def -(a: Double): BlockMat = 
+	{
+		val f = (m: BDM[Double]) => m-a;
+		scalarMap(f);
+	}
+	def *(a: Double): BlockMat = 
+	{
+		val f = (m: BDM[Double]) => m*a;
+		scalarMap(f);
+	}
+	def /(a: Double): BlockMat = 
+	{
+		val f = (m: BDM[Double]) => m/a;
+		scalarMap(f);
+	}
+
+	//===================================
 	//elementwise operations
+	//===================================
 	def forEach(other: BlockMat, f: (BDM[Double],BDM[Double]) => BDM[Double]): BlockMat = 
 	{
 		type MatTuple = (BDM[Double],BDM[Double])
 
-		def applyFunc(tuple: (BlockID,MatTuple)): Block =
+		def applyFunc(tuple: (BlockID,MatTuple)): (BlockID,BDM[Double]) =
 		{
 			val id = tuple._1;
 			val A: BDM[Double] = tuple._2._1;
 			val B: BDM[Double] = tuple._2._2;
-			Block(id, f(A,B));
+			(id, f(A,B));
 		}
 
 		if (size == other.size && bsize == other.bsize)
 		{
-			val A = (this.unzip).persist();
-			val B = (other.unzip).persist();
-			val result = A
-				.join(B)
+			val result = blocks
+				.join(other.blocks)
 				.map(applyFunc);
 
 			BlockMat(size,bsize,result)
@@ -78,25 +98,24 @@ case class BlockMat(
 	}
 	def -(other: BlockMat): BlockMat =
 	{
-		def subtractFunc = (A: BDM[Double],B: BDM[Double]) => A - B
-		forEach(other,subtractFunc);
+		val f = (A: BDM[Double],B: BDM[Double]) => A - B
+		forEach(other,f);
 	}
 	def +(other: BlockMat): BlockMat =
 	{
-		def addFunc = (A: BDM[Double],B: BDM[Double]) => A + B
-		forEach(other,addFunc);
+		val f = (A: BDM[Double],B: BDM[Double]) => A + B
+		forEach(other,f);
 	}
 	def /(other: BlockMat): BlockMat =
 	{
-		def divFunc = (A: BDM[Double],B: BDM[Double]) => A :/ B
-		forEach(other,divFunc);
+		val f = (A: BDM[Double],B: BDM[Double]) => A :/ B
+		forEach(other,f);
 	}
 	def *(other: BlockMat): BlockMat =
 	{
-		def multFunc = (A: BDM[Double],B: BDM[Double]) => A :* B
-		forEach(other,multFunc);
+		val f = (A: BDM[Double],B: BDM[Double]) => A :* B
+		forEach(other,f);
 	}
-
 	
 	// matrix product <v,Av>
 	def matProduct(vec: BlockVec): Double = vec.dot(this.multiply(vec))
@@ -104,29 +123,25 @@ case class BlockMat(
 	// matrix-vector multiplication
 	def multiply(vec: BlockVec): BlockVec =
 	{
-		type MatVecTuple = (Block,ColBlock)
-		type BlockComponents = (BlockID, BDV[Double])
+		type MatVecTuple = ((BlockID,BDM[Double]),(BlockID,BDV[Double]))
 
-		def makeBlock(tup: BlockComponents): ColBlock = ColBlock(tup._1,tup._2);
-
-		def multiplyBlocks(tup: MatVecTuple): BlockComponents = 
+		def multiplyBlocks(tup: MatVecTuple): (BlockID, BDV[Double]) = 
 		{
 			val A = tup._1;
 			val v = tup._2;
-			(A.id.product(v.id), A.mat * v.vec);
+			(A._1.product(v._1), A._2 * v._2);
 		}
 
 		if (size.innerDimEqual(vec.size) && bsize.innerDimEqual(vec.bsize))
 		{
-			val A = blocks.map(x => (x.col,x))
-			val v = vec.blocks.map(x => (x.row,x))
-			val Av: RDD[ColBlock] = A
+			val A = blocks.map(x => (x._1.col,x))
+			val v = vec.blocks.map(x => (x._1.row,x))
+			val Av: RDD[(BlockID,BDV[Double])] = A
 				.join(v) 
 				.map(tup => multiplyBlocks(tup._2))
 				.persist(StorageLevel.MEMORY_AND_DISK)
-				.partitionBy(new HashPartitioner(vec.size.nrows.toInt))
 				.reduceByKey(_ + _)
-				.map(makeBlock)
+				.partitionBy(new HashPartitioner(vec.size.nrows.toInt))
 
 			BlockVec(size.product(vec.size),bsize.product(vec.bsize),Av);
 		}
@@ -134,31 +149,28 @@ case class BlockMat(
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
 	}
 
-	// matrix-matrix multiplication
 	def multiply(other: BlockMat): BlockMat =
 	{
-		type BlockTuple = (Block,Block)
-		type BlockComponents = (BlockID, BDM[Double])
+		type MatTuple = ((BlockID,BDM[Double]),(BlockID,BDM[Double]))
 
-		def makeBlock(v: BlockComponents): Block = Block(v._1,v._2);
-
-		def multiplyBlocks(tup: BlockTuple): BlockComponents = 
+		def multiplyBlocks(tup: MatTuple): (BlockID,BDM[Double]) = 
 		{
 			val A = tup._1;
 			val B = tup._2;
-			(A.id.product(B.id), A.mat * B.mat);
+			(A._1.product(B._1), A._2 * B._2);
 		}
 
 		if (size.innerDimEqual(other.size) && bsize.innerDimEqual(other.bsize))
 		{
-			val A = blocks.map(x => (x.col,x))
-			val B = other.blocks.map(x => (x.row,x))
-			val AB: RDD[Block] = A
-				.join(B) // RDD[(k,(A,B))]
+			val A = blocks.map(x => (x._1.col,x))
+			val B = other.blocks.map(x => (x._1.row,x))
+			val AB: RDD[(BlockID,BDM[Double])] = A
+			/*val AB = A*/
+				.join(B) 
 				.map(tup => multiplyBlocks(tup._2))
 				.persist(StorageLevel.MEMORY_AND_DISK)
 				.reduceByKey(_ + _)
-				.map(makeBlock)
+				/*.partitionBy(new HashPartitioner(size.nrows * other))*/
 
 			BlockMat(size.product(other.size),bsize.product(other.bsize),AB);
 		}
@@ -171,8 +183,8 @@ case class BlockMat(
 		BlockMat(
 			size.transpose(),
 			bsize.transpose(),
-			blocks.map(b => b.transpose())
-			);
+			blocks.map{ b => (b._1.transpose(),b._2.t) }
+		);
 	}
 
 	// print small matrices for test only
@@ -181,19 +193,25 @@ case class BlockMat(
 		println("size: " + size);
 		println("bsize: " + bsize);
 		println("numParts: " + blocks.partitions.length);
-		blocks.collect.foreach(println);
+		blocks
+			.map{x => PrintBlock(x._1,x._2)}
+			.collect
+			.foreach(println);
 		println();
 	}
 
-	def unzip(): RDD[(BlockID,BDM[Double])] = blocks.map(x => (x.id,x.mat) )
-
-	def saveAsTextFile(fout: String) = blocks.saveAsTextFile(fout);
+	def saveAsTextFile(fout: String) = 
+	{
+		blocks
+			.map{x => PrintBlock(x._1,x._2)}
+			.saveAsTextFile(fout);
+	}
 
 }
 object BlockMat {
 
 	/*type BlockSize = (Long,Long)*/
-	type Index = (Long,Long)
+	private type Index = (Long,Long)
 
 	// get the lexicographic linear index of (i,j) in an (N,M) matrix 
 	private def getID(size: BlockSize, ij: Index): Long = {
@@ -224,7 +242,7 @@ object BlockMat {
 		matSize: BlockSize,
 		bsize: BlockSize) = 
 	{
-		def toBlock(x: (Long, Iterable[(Long,Double)]) ) = 
+		def toBlock(x: (Long, Iterable[(Long,Double)]) ): (BlockID, BDM[Double]) = 
 		{
 			val id: BlockID = BlockID.fromID(x._1,matSize,bsize);
 			val A = Array.ofDim[Double]((bsize.nrows*bsize.ncols).toInt);
@@ -235,7 +253,7 @@ object BlockMat {
 			
 			// instantiate BreezeDenseMatrix
 			val mat: BDM[Double] = new BDM(bsize.nrows.toInt,bsize.ncols.toInt,A);
-			Block(id,mat);
+			(id,mat);
 		}
 
 		val nblocksRow: Long = (1.0 * matSize.nrows / bsize.nrows).ceil.toLong;
@@ -267,9 +285,12 @@ object BlockMat {
 		val nblocksCol: Long = matSize.ncols / bsize.ncols;
 		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
 
-		def ID(n: Int): BlockID = {
-			BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);
-		}
+		def ID(n: Int): BlockID = BlockID(
+			n.toLong % nblocksRow, 
+			n.toLong / nblocksRow,
+			nblocksRow,
+			nblocksCol
+		);
 
 		def toBDM(dat: Array[Double]): BDM[Double] = 
 		{
@@ -279,8 +300,6 @@ object BlockMat {
 				dat
 			);
 		}
-
-		def toBlock(v: (BlockID,BDM[Double])) = Block(v._1,v._2)
 
 		val blockNums = sc
 			.parallelize(0 to numPartitions-1, numPartitions)
@@ -294,9 +313,8 @@ object BlockMat {
 			.glom
 			.map(toBDM);
 
-		val blocks = blockNums
+		val blocks: RDD[(BlockID,BDM[Double])] = blockNums
 			.zip(dat)
-			.map(toBlock);
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
@@ -312,19 +330,22 @@ object BlockMat {
 		val nblocksCol: Long = matSize.ncols / bsize.ncols;
 		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
 
-		def ID(n: Int): BlockID = {
-			BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);
+		def genNewID(n: Int): BlockID = BlockID(
+			n.toLong % nblocksRow, 
+			n.toLong / nblocksRow,
+			nblocksRow,
+			nblocksCol
+		);
+
+		def genNewBlock(it: Iterator[(Int,Int)]): Iterator[(BlockID,BDM[Double])] = {
+			it.map(v => (genNewID(v._1), f() ));
 		}
 
-		def newBlock(it: Iterator[(Int,Int)]): Iterator[Block] = {
-			it.map(v => Block(ID(v._1), f() ));
-		}
-
-		val blocks = sc
+		val blocks: RDD[(BlockID,BDM[Double])] = sc
 			.parallelize(0 to numPartitions-1, numPartitions)
 			.map(x => (x,x))
 			.partitionBy(new HashPartitioner(numPartitions))
-			.mapPartitions(newBlock);
+			.mapPartitions(genNewBlock);
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
@@ -353,20 +374,20 @@ object BlockMat {
 	}
 
 	// only works for square matrices w/ square blocks
-	def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
-	{
-		val nblocksRow: Long = matSize.nrows / bsize.nrows;
-		val nblocksCol: Long = matSize.ncols / bsize.ncols;
-		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
+	/*def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
+	/*{*/
+	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
+	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
+	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
 
-		def ID(n: Int): BlockID = {
-			BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);
-		}
+	/*	def ID(n: Int): BlockID = {*/
+	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
+	/*	}*/
 
-		val blocks = sc
-			.parallelize(0 to numPartitions-1, numPartitions)
-			.map(x => Block.eye(ID(x),bsize));
+	/*	val blocks = sc*/
+	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
+	/*		.map(x => Block.eye(ID(x),bsize));*/
 
-		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
-	}
+	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
+	/*}*/
 }		

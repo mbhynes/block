@@ -1,6 +1,7 @@
 package himrod.block
 
 import breeze.linalg.{DenseVector => BDV}
+import breeze.linalg.{DenseMatrix => BDM}
 import breeze.linalg._
 import breeze.numerics
 
@@ -26,7 +27,7 @@ case class BlockVecSizeMismatchException(msg: String) extends Exception
 case class BlockVec(
 	val size: BlockSize, // size of matrix in blocks
 	val bsize: BlockSize, //size of uniform blocks
-	val blocks: RDD[ColBlock] // RDD of vector blocks 
+	val blocks: RDD[(BlockID,BDV[Double])] // RDD of vector blocks 
 	) extends Serializable 
 {
 	def nrows(): Long = size.nrows;
@@ -34,26 +35,44 @@ case class BlockVec(
 	def brows(): Long = bsize.nrows;
 	def bcols(): Long = bsize.ncols;
 
-	def getBlock(id: BlockID): RDD[ColBlock] = {
-		blocks.filter(x => x.id == id)
-	}
-	def getBlock(row: Long, col: Long): RDD[ColBlock] = {
-		blocks.filter(x => x.id == BlockID(row,col))
-	}
+	/*def getBlock(id: BlockID): RDD[ColBlock] = {*/
+	/*	blocks.filter(x => x.id == id)*/
+	/*}*/
+	/*def getBlock(row: Long, col: Long): RDD[ColBlock] = {*/
+	/*	blocks.filter(x => x.id == BlockID(row,col))*/
+	/*}*/
 
 	def numBlocks(): Long = size.nrows * size.ncols; 
 
 	// scalar operations
-	def +(a: Double): BlockVec = BlockVec(size,bsize,blocks.map(_+a));
-	def -(a: Double): BlockVec = BlockVec(size,bsize,blocks.map(_-a));
-	def *(a: Double): BlockVec = BlockVec(size,bsize,blocks.map(_*a));
-	def /(a: Double): BlockVec = BlockVec(size,bsize,blocks.map(_/a));
+	def scalarMap(f: (BDV[Double]) => BDV[Double]): BlockVec = {
+		BlockVec(size,bsize,blocks.mapValues{f});
+	}
+	def +(a: Double): BlockVec = 
+	{
+		val f = (m: BDV[Double]) => m+a;
+		scalarMap(f);
+	}
+	def -(a: Double): BlockVec = 
+	{
+		val f = (m: BDV[Double]) => m-a;
+		scalarMap(f);
+	}
+	def *(a: Double): BlockVec = 
+	{
+		val f = (m: BDV[Double]) => m*a;
+		scalarMap(f);
+	}
+	def /(a: Double): BlockVec = 
+	{
+		val f = (m: BDV[Double]) => m/a;
+		scalarMap(f);
+	}
 
-	def unzip(): RDD[(BlockID,BDV[Double])] = blocks.map(x => (x.id,x.vec) )
-
+	/*def unzip(): RDD[(BlockID,BDV[Double])] = blocks.map(x => (x.id,x.vec) )*/
 	def dot(other: BlockVec): Double =
 	{
-		type VecTuple = (BDV[Double], BDV[Double])
+		type VecTuple = (BDV[Double],BDV[Double])
 
 		def dotFunc(tuple: (BlockID,VecTuple)): Double = 
 		{
@@ -62,8 +81,8 @@ case class BlockVec(
 			u dot v;
 		}
 
-		val uv = (this.unzip)
-			.join(other.unzip)
+		val uv: RDD[Double] = blocks
+			.join(other.blocks)
 			.map(dotFunc);
 
 		uv.reduce(_+_);
@@ -74,18 +93,15 @@ case class BlockVec(
 	{
 		type VecTuple = (BDV[Double], BDV[Double])
 
-		def applyFunc(tuple: (BlockID,VecTuple)): ColBlock = 
-		{
-			val u = (tuple._2)._1;
-			val v = (tuple._2)._2;
-			ColBlock(tuple._1, f(u,v));
-		}
+		/*def applyFunc(uv: (VecTuple)): (BlockID,BDV[Double]) = {*/
+		/*	f(uv._1,uv._2));*/
+		/*}*/
 
 		if (size == other.size && bsize == other.bsize)
 		{
-			val uv = (this.unzip)
-				.join(other.unzip)
-				.map(applyFunc);
+			val uv: RDD[(BlockID,BDV[Double])] = blocks
+				.join(other.blocks)
+				.mapValues{x => f(x._1,x._2)};
 
 			BlockVec(size,bsize,uv);
 		}
@@ -117,30 +133,30 @@ case class BlockVec(
 	//vector-matrix multiplication, v' * A
 	def multiply(M: BlockMat): BlockVec =
 	{
-		type VecMatTuple = (ColBlock,Block)
-		type BlockVecComponents = (BlockID, BDV[Double])
+		type VecMatTuple = ((BlockID,BDV[Double]),(BlockID,BDM[Double]))
+		/*type BlockVecComponents = (BlockID, BDV[Double])*/
 
-		def makeColBlock(v: BlockVecComponents): ColBlock = ColBlock(v._1,v._2);
+		/*def makeColBlock(v: BlockVecComponents): ColBlock = ColBlock(v._1,v._2);*/
 
-		def multiplyBlocks(tup: VecMatTuple): BlockVecComponents = 
+		def multiplyBlocks(tup: VecMatTuple): (BlockID, BDV[Double]) = 
 		{
 			val v = tup._1;
 			val A = tup._2;
-			((v.id.transpose.product(A.id)).transpose, (v.vec.t * A.mat).t);
+			((v._1.transpose.product(A._1)).transpose, (v._2.t * A._2).t);
 		}
 
 		// compare the number of blocks
 		if ((size.transpose.innerDimEqual(M.size)) && (bsize.transpose.innerDimEqual(M.bsize)))
 		{
-			val v = blocks.map(x => (x.col,x))
-			val A = M.blocks.map(x => (x.row,x))
-			val vA: RDD[ColBlock] = v
+			// treat v as v.transpose
+			val v = blocks.map(x => (x._1.row,x))
+			val A = M.blocks.map(x => (x._1.row,x))
+			val vA: RDD[(BlockID,BDV[Double])] = v
 				.join(A) // RDD[(k,(A,B))]
-				.map(tup => multiplyBlocks(tup._2))
-				.persist(StorageLevel.MEMORY_AND_DISK)
-				.partitionBy(new HashPartitioner(size.nrows.toInt))
+				.persist(StorageLevel.MEMORY_AND_DISK_SER)
+				.map{x => multiplyBlocks(x._2)}
 				.reduceByKey(_ + _)
-				.map(makeColBlock)
+				.partitionBy(new HashPartitioner(size.nrows.toInt))
 
 			val newSize: BlockSize = size
 				.transpose
@@ -160,11 +176,11 @@ case class BlockVec(
 
 	// metrics + operations
 	def mapBlocksToScalar(f: (BDV[Double]) => Double): RDD[Double] = {
-		blocks.map(x => f(x.vec));
+		blocks.map{x => f(x._2)};
 	}
 
 	def mapBlocks(f: (BDV[Double]) => BDV[Double]): BlockVec = {
-		BlockVec(size,bsize,blocks.map{v => v.apply(f)} );
+		BlockVec(size,bsize,blocks.mapValues{f});
 	}
 
 	def print() = 
@@ -172,11 +188,18 @@ case class BlockVec(
 		println("size: " + size);
 		println("bsize: " + bsize);
 		println("numParts: " + blocks.partitions.length);
-		blocks.collect.foreach(println);
+		blocks
+			.map(x => PrintColBlock(x._1,x._2))
+			.collect
+			.foreach(println);
 		println("");
 	}
 
-	def saveAsTextFile(fout: String) = blocks.saveAsTextFile(fout);
+	def saveAsTextFile(fout: String) = 
+	{
+		blocks.map(x => PrintColBlock(x._1,x._2))
+		.saveAsTextFile(fout);
+	}
 }
 
 object BlockVec {
@@ -188,23 +211,22 @@ object BlockVec {
 		vecSize: Long,
 		bsize: Long): BlockVec = 
 	{
-		def toBlock(x: (Long, Iterable[(Long,Double)]) ) = 
+		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
+
+		def toBlock(x: (Long, Iterable[(Long,Double)]) ): (BlockID, BDV[Double]) = 
 		{
-			val id: BlockID = BlockID(x._1,0L);
+			val id: BlockID = BlockID(x._1,0L,numPartitions.toLong,1L);
 			val v: Array[Double] = Array.fill[Double](bsize.toInt)(0);
 
 			// fill the nonzero values of vector v
 			for (tuple <- x._2)
 				v(tuple._1.toInt) = tuple._2
 			
-			ColBlock(id,BDV(v));
+			(id,BDV(v));
 		}
-
-		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
-
 		// convert vector v_i textfile to tuple (absBlockID, relBlockID, A_ij)
 		val blocks = sc.textFile(fin, numPartitions)
-			.map { line => 
+			.map{ line => 
 				val tokens = line.split(delim); 
 				val i: Long = tokens(0).toLong;
 				val id_abs: Long = i / bsize; //block number
@@ -217,7 +239,7 @@ object BlockVec {
 			.map(toBlock)
 
 		BlockVec(
-			BlockSize(numPartitions,1L),
+			BlockSize(numPartitions.toLong,1L),
 			BlockSize(bsize,1L),
 			blocks);
 	}
@@ -229,27 +251,27 @@ object BlockVec {
 	{
 		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
 
-		def toBlockID(n: Int): BlockID = {
-			BlockID(n.toLong % numPartitions, 0L);
-		}
+		def genNewID(n: Int): BlockID = BlockID(
+			n.toLong % numPartitions, 
+			0L,
+			numPartitions,
+			1L
+		);
 
-		def toBDV(dat: Array[Double]): BDV[Double] = new BDV(dat);
+		def genNewBlock(dat: Array[Double]): BDV[Double] = new BDV(dat);
 
-		def toColBlock(v: (BlockID,BDV[Double])) = ColBlock(v._1,v._2)
-
-		val blockNums = sc
+		val blockNums: RDD[BlockID] = sc
 			.parallelize(0 to numPartitions-1, numPartitions)
 			.map(x => (x,x))
 			.partitionBy(new HashPartitioner(numPartitions))
-			.map(x => toBlockID(x._1))
+			.map(x => genNewID(x._1))
 
-		val dat = normalRDD(sc,vecSize,numPartitions)
+		val dat: RDD[BDV[Double]] = normalRDD(sc,vecSize,numPartitions)
 			.glom
-			.map(toBDV);
+			.map(genNewBlock);
 
-		val blocks = blockNums
-			.zip(dat)
-			.map(toColBlock);
+		val blocks: RDD[(BlockID,BDV[Double])] = blockNums
+			.zip(dat);
 
 		BlockVec(
 			BlockSize(numPartitions,1L),
@@ -266,19 +288,22 @@ object BlockVec {
 	{
 		val numPartitions: Int = (1.0 * vecSize / bsize).ceil.toInt;
 
-		def ID(n: Int): BlockID = {
-			BlockID(n.toLong % numPartitions, 0L);
+		def genNewID(n: Int): BlockID = BlockID(
+			n.toLong % numPartitions, 
+			0L,
+			numPartitions,
+			1L
+		);
+
+		def genNewBlock(it: Iterator[(Int,Int)]): Iterator[(BlockID, BDV[Double])] = {
+			it.map{v => (genNewID(v._1), f())};
 		}
 
-		def newBlock(it: Iterator[(Int,Int)]): Iterator[ColBlock] = {
-			it.map(v => ColBlock(ID(v._1), f() ));
-		}
-
-		val blocks = sc
+		val blocks: RDD[(BlockID,BDV[Double])] = sc
 			.parallelize(0 to numPartitions-1, numPartitions)
-			.map(x => (x,x))
+			.map{x => (x,x)}
 			.partitionBy(new HashPartitioner(numPartitions))
-			.mapPartitions(newBlock);
+			.mapPartitions(genNewBlock);
 
 		BlockVec(
 			BlockSize(numPartitions,1L),
@@ -288,21 +313,21 @@ object BlockVec {
 
 	def ones(sc: SparkContext, vecSize: Long, bsize: Long): BlockVec =
 	{
-		val onesFunc = () => BDV.ones[Double](bsize.toInt);
-		BlockVec.generate(sc,vecSize,bsize,onesFunc);
+		val f = () => BDV.ones[Double](bsize.toInt);
+		BlockVec.generate(sc,vecSize,bsize,f);
 	}
 
 	def zeros(sc: SparkContext, vecSize: Long, bsize: Long): BlockVec =
 	{
-		val zerosFunc = () => BDV.zeros[Double](bsize.toInt);
-		BlockVec.generate(sc,vecSize,bsize,zerosFunc);
+		val f = () => BDV.zeros[Double](bsize.toInt);
+		BlockVec.generate(sc,vecSize,bsize,f);
 	}
 
 	// fill vector with single value
 	def fill(sc: SparkContext, vecSize: Long, bsize: Long, a: Double): BlockVec =
 	{
-		val fillFunc = () => BDV[Double](Array.fill[Double](bsize.toInt)(a));
-		BlockVec.generate(sc,vecSize,bsize,fillFunc);
+		val f = () => BDV[Double](Array.fill[Double](bsize.toInt)(a));
+		BlockVec.generate(sc,vecSize,bsize,f);
 	}
 
 	// numerical operations
