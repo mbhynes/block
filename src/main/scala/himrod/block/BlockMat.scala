@@ -182,7 +182,7 @@ case class BlockMat(
 		println("bsize: " + bsize);
 		println("numParts: " + blocks.partitions.length);
 		blocks.collect.foreach(println);
-		println("");
+		println();
 	}
 
 	def unzip(): RDD[(BlockID,BDM[Double])] = blocks.map(x => (x.id,x.mat) )

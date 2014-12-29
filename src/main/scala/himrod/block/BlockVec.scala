@@ -339,6 +339,9 @@ object BlockVec {
 		result.sum;
 	}
 
+	// shorter form for v'*v
+	def normSquared(v: BlockVec): Double = sum(pow(v,2));
+
 	// default vector 2-norm
 	def norm(v: BlockVec): Double = norm(v,2);
 

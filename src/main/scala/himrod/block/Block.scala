@@ -58,9 +58,9 @@ case class Block(
 
 	def isZero(): Boolean = !any(mat);
 
-	def nrows(): Long = mat.rows;
+	def nrows(): Long = mat.rows.toLong;
 
-	def ncols(): Long = mat.cols;
+	def ncols(): Long = mat.cols.toLong;
 
 	def size(): BlockSize = BlockSize(mat.rows,mat.cols);
 
@@ -70,13 +70,24 @@ case class Block(
 	
 	def col(): Long = id.col;
 	
-	override def toString: String = {
-		id.toString() + ":" + mat.data.mkString(",");
+	override def toString: String = 
+	{
+		val len: Int = mat.data.length;
+		val rowOffset: Int = mat.rows * id.row.toInt;
+		val colOffset: Int = mat.cols * id.col.toInt;
+
+		val charsPerLine: Int = 10;
+		val sb: StringBuilder = new StringBuilder(mat.data.length * charsPerLine);
+		val delim: String = ",";
+		val nr: Int = nrows.toInt;
+		for ( (x,i) <- mat.data.zipWithIndex )
+			sb.append( (rowOffset + i/nr) +delim+ (colOffset + i%nr) +delim+ x +"\n");
+		sb.toString
 	}
 
 	def print() = {
-		println(id);
-		println(mat);
+		val str: String = id.toString() + ":" + mat.data.mkString(",");
+		println(str);
 	}
 }
 

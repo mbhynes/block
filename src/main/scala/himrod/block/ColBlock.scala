@@ -115,13 +115,22 @@ case class ColBlock(
 	
 	def col(): Long = id.col;
 	
-	override def toString: String = {
-		id.toString() + ":" + vec.data.mkString(",");
+	override def toString: String = 
+	{
+		val len: Int = vec.data.length;
+		val rowOffset: Int = id.row.toInt * len; 
+		val charsPerLine: Int = 5;
+		val sb: StringBuilder = new StringBuilder(len * charsPerLine);
+		val delim: String = ",";
+		val nr: Int = nrows.toInt;
+		for ( (x,i) <- vec.data.zipWithIndex )
+			sb.append( (rowOffset+i) +delim+ x +"\n");
+		sb.toString
 	}
 
 	def print() = {
-		println(id);
-		println(vec);
+		val str: String = id.toString() + ":" + vec.data.mkString(",");
+		println(str);
 	}
 }
 
