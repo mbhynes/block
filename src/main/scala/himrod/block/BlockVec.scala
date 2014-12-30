@@ -91,17 +91,43 @@ case class BlockVec(
 	//element-wise operation f(u_1,u_2) = v
 	def forEach(other: BlockVec, f: (BDV[Double],BDV[Double]) => BDV[Double] ) =
 	{
-		type VecTuple = (BDV[Double], BDV[Double])
+		type VecIter = Iterable[BDV[Double]];
+		type VecIterTuple = (VecIter,VecIter);
 
-		/*def applyFunc(uv: (VecTuple)): (BlockID,BDV[Double]) = {*/
-		/*	f(uv._1,uv._2));*/
-		/*}*/
+		def applyFunc(pair: VecIterTuple) = 
+		{
+			val firstEmpty = pair._1.isEmpty;
+			val secondEmpty = pair._2.isEmpty;
+
+			if (firstEmpty && !secondEmpty)
+			{
+				val u = BDV.zeros[Double](size.nrows.toInt);
+				for (v <- pair._2)
+					yield f(u,v);
+			}
+			else if (!firstEmpty && secondEmpty)
+			{
+				val v = BDV.zeros[Double](size.nrows.toInt);
+				for (u <- pair._1)
+					yield f(u,v);
+			}
+			else if (!firstEmpty && !secondEmpty)
+			{
+				for (u <- pair._1; v <- pair._2)
+					yield f(u,v);
+			}
+			else // this returns nothing, since both Iterators are empty
+			{
+				for (u <- pair._1; v <- pair._2)
+					yield f(u,v);
+			}
+		}
 
 		if (size == other.size && bsize == other.bsize)
 		{
 			val uv: RDD[(BlockID,BDV[Double])] = blocks
-				.join(other.blocks)
-				.mapValues{x => f(x._1,x._2)};
+				.cogroup(other.blocks)
+				.flatMapValues{applyFunc}
 
 			BlockVec(size,bsize,uv);
 		}

@@ -81,7 +81,7 @@ case class PrintBlock(
 		val delim: String = ",";
 		val nr: Int = mat.rows;
 		for ( (x,i) <- mat.data.zipWithIndex )
-			sb.append( (rowOffset + i/nr) +delim+ (colOffset + i%nr) +delim+ x +"\n");
+			sb.append( (rowOffset + i%nr) +delim+ (colOffset + i/nr) +delim+ x +"\n");
 		sb.toString
 	}
 

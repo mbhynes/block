@@ -30,6 +30,16 @@ case class BlockMat(
 	val blocks: RDD[(BlockID,BDM[Double])]
 	) extends Serializable 
 {
+	/*override def equals(other: Any): Boolean = */
+	/*{*/
+	/*	match other*/
+	/*	{*/
+	/*		case B: BlockMat => {*/
+	/*			(size == B.size) && (bsize == B.bsize) && blocks*/
+	/*		}*/
+	/*	}*/
+	/*}*/
+
 	def nrows(): Long = size.nrows;
 	def ncols(): Long = size.nrows;
 	def brows(): Long = bsize.nrows;
@@ -75,27 +85,52 @@ case class BlockMat(
 	//===================================
 	def forEach(other: BlockMat, f: (BDM[Double],BDM[Double]) => BDM[Double]): BlockMat = 
 	{
-		type MatTuple = (BDM[Double],BDM[Double])
+		type MatIter = Iterable[BDM[Double]];
+		type MatIterTuple = (MatIter,MatIter);
 
-		def applyFunc(tuple: (BlockID,MatTuple)): (BlockID,BDM[Double]) =
+		def applyFunc(pair: MatIterTuple) =
 		{
-			val id = tuple._1;
-			val A: BDM[Double] = tuple._2._1;
-			val B: BDM[Double] = tuple._2._2;
-			(id, f(A,B));
+			val firstEmpty = pair._1.isEmpty;
+			val secondEmpty = pair._2.isEmpty;
+
+			if (firstEmpty && !secondEmpty)
+			{
+				val A = BDM.zeros[Double](size.nrows.toInt,size.ncols.toInt);
+				for (B <- pair._2)
+					yield f(A,B);
+			}
+			else if (!firstEmpty && secondEmpty)
+			{
+				val B = BDM.zeros[Double](size.nrows.toInt,size.ncols.toInt);
+				for (A <- pair._1)
+					yield f(A,B);
+			}
+			else if (!firstEmpty && !secondEmpty)
+			{
+				for (A <- pair._1; B <- pair._2)
+					yield f(A,B);
+			}
+			// this returns nothing, since both Iterators are empty
+			// but we need to yield something
+			else 
+			{
+				for (A <- pair._1; B <- pair._2)
+					yield f(A,B);
+			}
 		}
 
 		if (size == other.size && bsize == other.bsize)
 		{
 			val result = blocks
-				.join(other.blocks)
-				.map(applyFunc);
+				.cogroup(other.blocks)
+				.flatMapValues{applyFunc};
 
 			BlockMat(size,bsize,result)
 		}
 		else
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
 	}
+
 	def -(other: BlockMat): BlockMat =
 	{
 		val f = (A: BDM[Double],B: BDM[Double]) => A - B
