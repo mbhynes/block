@@ -122,8 +122,14 @@ case class PrintColBlock(
 		val charsPerLine: Int = 5;
 		val sb: StringBuilder = new StringBuilder(len * charsPerLine);
 		val delim: String = ",";
+		val last: Int = vec.data.length - 1;
 		for ( (x,i) <- vec.data.zipWithIndex )
-			sb.append( (rowOffset+i) +delim+ x +"\n");
+		{
+			if (i==last)
+				sb.append( (rowOffset+i) +delim+ x);
+			else
+				sb.append( (rowOffset+i) +delim+ x +"\n");
+		}
 		sb.toString
 	}
 	/*def print() = {*/

@@ -80,8 +80,14 @@ case class PrintBlock(
 		val sb: StringBuilder = new StringBuilder(mat.data.length * charsPerLine);
 		val delim: String = ",";
 		val nr: Int = mat.rows;
+		val last: Int = nr * mat.cols - 1;
 		for ( (x,i) <- mat.data.zipWithIndex )
-			sb.append( (rowOffset + i%nr) +delim+ (colOffset + i/nr) +delim+ x +"\n");
+		{
+			if (i == last)
+				sb.append( (rowOffset + i%nr) +delim+ (colOffset + i/nr) +delim+ x);
+			else
+				sb.append( (rowOffset + i%nr) +delim+ (colOffset + i/nr) +delim+ x +"\n");
+		}
 		sb.toString
 	}
 

@@ -80,6 +80,16 @@ case class BlockMat(
 		scalarMap(f);
 	}
 
+	def transpose(): BlockMat =
+	{
+		BlockMat(
+			size.transpose(),
+			bsize.transpose(),
+			blocks.map{ b => (b._1.transpose(),b._2.t) }
+			.persist(StorageLevel.MEMORY_AND_DISK_SER)
+		);
+	}
+
 	//===================================
 	//elementwise operations
 	//===================================
@@ -151,6 +161,12 @@ case class BlockMat(
 		val f = (A: BDM[Double],B: BDM[Double]) => A :* B
 		forEach(other,f);
 	}
+	//very unsafe function..
+	def multBlocks(other: BlockMat): BlockMat =
+	{
+		val f = (A: BDM[Double],B: BDM[Double]) => A * B
+		forEach(other,f);
+	}
 	
 	// matrix product <v,Av>
 	def matProduct(vec: BlockVec): Double = vec.dot(this.multiply(vec))
@@ -169,16 +185,17 @@ case class BlockMat(
 
 		if (size.innerDimEqual(vec.size) && bsize.innerDimEqual(vec.bsize))
 		{
+			val newSize: BlockSize = size.product(vec.size);
 			val A = blocks.map(x => (x._1.col,x))
 			val v = vec.blocks.map(x => (x._1.row,x))
 			val Av: RDD[(BlockID,BDV[Double])] = A
 				.join(v) 
 				.map(tup => multiplyBlocks(tup._2))
-				.persist(StorageLevel.MEMORY_AND_DISK)
+				.persist(StorageLevel.MEMORY_AND_DISK_SER)
 				.reduceByKey(_ + _)
-				.partitionBy(new HashPartitioner(vec.size.nrows.toInt))
+				.partitionBy(new HashPartitioner(newSize.nrows.toInt))
 
-			BlockVec(size.product(vec.size),bsize.product(vec.bsize),Av);
+			BlockVec(newSize,bsize.product(vec.bsize),Av);
 		}
 		else
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
@@ -197,29 +214,20 @@ case class BlockMat(
 
 		if (size.innerDimEqual(other.size) && bsize.innerDimEqual(other.bsize))
 		{
+			val newSize: BlockSize = size.product(other.size);
 			val A = blocks.map(x => (x._1.col,x))
 			val B = other.blocks.map(x => (x._1.row,x))
 			val AB: RDD[(BlockID,BDM[Double])] = A
-			/*val AB = A*/
 				.join(B) 
 				.map(tup => multiplyBlocks(tup._2))
-				.persist(StorageLevel.MEMORY_AND_DISK)
+				.persist(StorageLevel.MEMORY_AND_DISK_SER)
 				.reduceByKey(_ + _)
-				/*.partitionBy(new HashPartitioner(size.nrows * other))*/
+				.partitionBy(new HashPartitioner((newSize.nrows*newSize.ncols).toInt));
 
-			BlockMat(size.product(other.size),bsize.product(other.bsize),AB);
+			BlockMat(newSize,bsize.product(other.bsize),AB);
 		}
 		else
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
-	}
-
-	def transpose(): BlockMat =
-	{
-		BlockMat(
-			size.transpose(),
-			bsize.transpose(),
-			blocks.map{ b => (b._1.transpose(),b._2.t) }
-		);
 	}
 
 	// print small matrices for test only
@@ -308,6 +316,7 @@ object BlockMat {
 			.groupByKey()
 			.coalesce(numPartitions)
 			.map(toBlock)
+			.persist(StorageLevel.MEMORY_AND_DISK_SER);
 
 		val bmatSize: BlockSize = BlockSize(nblocksRow,nblocksCol); 
 		BlockMat(bmatSize,bsize,blocks);
@@ -344,14 +353,21 @@ object BlockMat {
 
 		val numEls = matSize.nrows * matSize.ncols;
 
-		val dat = normalRDD(sc,numEls,numPartitions)
+		val dat = uniformRDD(sc,numEls,numPartitions)
 			.glom
 			.map(toBDM);
 
 		val blocks: RDD[(BlockID,BDM[Double])] = blockNums
 			.zip(dat)
+			.persist(StorageLevel.MEMORY_AND_DISK_SER);
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
+	}
+
+	def randSPD(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat = 
+	{
+		val A = BlockMat.rand(sc,matSize,bsize);
+		A + A.transpose() + BlockMat.eye(sc,matSize,bsize)*10;
 	}
 
 	// create uniform BlockMat with given generator function f()=>BDM[Double]
@@ -380,7 +396,8 @@ object BlockMat {
 			.parallelize(0 to numPartitions-1, numPartitions)
 			.map(x => (x,x))
 			.partitionBy(new HashPartitioner(numPartitions))
-			.mapPartitions(genNewBlock);
+			.mapPartitions(genNewBlock)
+			.persist(StorageLevel.MEMORY_AND_DISK_SER);
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
@@ -409,20 +426,38 @@ object BlockMat {
 	}
 
 	// only works for square matrices w/ square blocks
-	/*def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =*/
-	/*{*/
-	/*	val nblocksRow: Long = matSize.nrows / bsize.nrows;*/
-	/*	val nblocksCol: Long = matSize.ncols / bsize.ncols;*/
-	/*	val numPartitions: Int = (nblocksRow * nblocksCol).toInt;*/
+	def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
+	{
+		val nblocksRow: Long = matSize.nrows / bsize.nrows;
+		val nblocksCol: Long = matSize.ncols / bsize.ncols;
+		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
 
-	/*	def ID(n: Int): BlockID = {*/
-	/*		BlockID(n.toLong % nblocksRow, n.toLong / nblocksRow);*/
-	/*	}*/
+		def genNewID(n: Int): BlockID = 
+			BlockID(
+				n.toLong % nblocksRow,
+				n.toLong / nblocksRow,
+				nblocksRow,
+				nblocksCol
+				);
 
-	/*	val blocks = sc*/
-	/*		.parallelize(0 to numPartitions-1, numPartitions)*/
-	/*		.map(x => Block.eye(ID(x),bsize));*/
+		def genNewBlock(num: Int): (BlockID,BDM[Double]) =
+		{
+			val id: BlockID = genNewID(num); 
+			val block: BDM[Double] = {
+				if (id.row == id.col)
+					BDM.eye(bsize.nrows.toInt);
+				else
+					BDM.zeros(bsize.nrows.toInt,bsize.ncols.toInt);
+			}
+			(id,block)
+		}
 
-	/*	BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);*/
-	/*}*/
+		val blocks: RDD[(BlockID,BDM[Double])] = sc
+			.parallelize(0 to numPartitions-1, numPartitions)
+			.map(genNewBlock)
+			.partitionBy(new HashPartitioner(numPartitions))
+			.persist(StorageLevel.MEMORY_AND_DISK_SER);
+
+		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
+	}
 }		

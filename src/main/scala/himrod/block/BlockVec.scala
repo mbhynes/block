@@ -30,6 +30,8 @@ case class BlockVec(
 	val blocks: RDD[(BlockID,BDV[Double])] // RDD of vector blocks 
 	) extends Serializable 
 {
+	/*def persist() = A.persist(StorageLevel.MEMORY_AND_DISK_SER);*/
+
 	def nrows(): Long = size.nrows;
 	def ncols(): Long = size.nrows;
 	def brows(): Long = bsize.nrows;
@@ -263,6 +265,7 @@ object BlockVec {
 			.groupByKey()
 			.coalesce(numPartitions)
 			.map(toBlock)
+			.persist(StorageLevel.MEMORY_AND_DISK_SER);
 
 		BlockVec(
 			BlockSize(numPartitions.toLong,1L),
@@ -292,7 +295,7 @@ object BlockVec {
 			.partitionBy(new HashPartitioner(numPartitions))
 			.map(x => genNewID(x._1))
 
-		val dat: RDD[BDV[Double]] = normalRDD(sc,vecSize,numPartitions)
+		val dat: RDD[BDV[Double]] = uniformRDD(sc,vecSize,numPartitions)
 			.glom
 			.map(genNewBlock);
 
@@ -375,6 +378,12 @@ object BlockVec {
 		v.mapBlocks(f);
 	}
 
+	def normSquared(v: BlockVec): Double =
+	{
+		val f = (u: BDV[Double]) => u dot u;
+		v.mapBlocksToScalar(f).sum;
+	}
+	
 	def pow(v: BlockVec, n: Double): BlockVec = 
 	{
 		val f = (u: BDV[Double]) => breeze.numerics.pow(u,n);
@@ -391,10 +400,10 @@ object BlockVec {
 	}
 
 	// shorter form for v'*v
-	def normSquared(v: BlockVec): Double = sum(pow(v,2));
+	/*def normSquared(v: BlockVec): Double = sum(pow(v,2));*/
 
 	// default vector 2-norm
-	def norm(v: BlockVec): Double = norm(v,2);
+	def norm(v: BlockVec): Double = math.sqrt(BlockVec.normSquared(v));
 
 	//vector p-norm
 	def norm(v: BlockVec, p: Double): Double = {
