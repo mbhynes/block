@@ -187,9 +187,11 @@ case class BlockMat(
 		{
 			val newSize: BlockSize = size.product(vec.size);
 			val A = blocks.map(x => (x._1.col,x))
-			val v = vec.blocks.map(x => (x._1.row,x))
+			/*val vecBC = blocks.sc.broadcast(vec);*/
+			val v = blocks.context.broadcast(vec.blocks.map(x => (x._1.row,x)));
+			/*val v = vec.blocks.map(x => (x._1.row,x))*/
 			val Av: RDD[(BlockID,BDV[Double])] = A
-				.join(v) 
+				.join(v.value) 
 				.map(tup => multiplyBlocks(tup._2))
 				.persist(StorageLevel.MEMORY_AND_DISK_SER)
 				.reduceByKey(_ + _)
@@ -243,6 +245,11 @@ case class BlockMat(
 		println();
 	}
 
+	// todo: find a way to save size+bsize
+	def saveAsObjectFile(fout: String) = {
+		blocks.saveAsObjectFile(fout);
+	}
+
 	def saveAsTextFile(fout: String) = 
 	{
 		blocks
@@ -277,6 +284,19 @@ object BlockMat {
 		getID(bsize,(i_block,j_block));
 	}
 
+	def fromObjectFile(
+		sc: SparkContext,
+		fin: String,
+		matSize: BlockSize,
+		bsize: BlockSize): BlockMat = 
+	{
+		val nblocksRow: Long = (1.0 * matSize.nrows / bsize.nrows).ceil.toLong;
+		val nblocksCol: Long = (1.0 * matSize.ncols / bsize.ncols).ceil.toLong;
+		val size: BlockSize = BlockSize(nblocksRow,nblocksCol);
+		val blocks: RDD[(BlockID, BDM[Double])] = sc.objectFile(fin);
+		BlockMat(size,bsize,blocks);
+	}
+
 	// load a dense matrix from a text file
 	def fromTextFile(
 		sc: SparkContext, 
@@ -285,7 +305,7 @@ object BlockMat {
 		matSize: BlockSize,
 		bsize: BlockSize) = 
 	{
-		def toBlock(x: (Long, Iterable[(Long,Double)]) ): (BlockID, BDM[Double]) = 
+		def toBlock(x: (Long, Iterable[(Long,Double)])): (BlockID, BDM[Double]) = 
 		{
 			val id: BlockID = BlockID.fromID(x._1,matSize,bsize);
 			val A = Array.ofDim[Double]((bsize.nrows*bsize.ncols).toInt);
@@ -329,7 +349,7 @@ object BlockMat {
 		val nblocksCol: Long = matSize.ncols / bsize.ncols;
 		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
 
-		def ID(n: Int): BlockID = BlockID(
+		def genNewID(n: Int): BlockID = BlockID(
 			n.toLong % nblocksRow, 
 			n.toLong / nblocksRow,
 			nblocksRow,
@@ -347,9 +367,9 @@ object BlockMat {
 
 		val blockNums = sc
 			.parallelize(0 to numPartitions-1, numPartitions)
-			.map(x => (x,x))
-			.partitionBy(new HashPartitioner(numPartitions))
-			.map(x => ID(x._1))
+			/*.map(x => (x,x))*/
+			/*.partitionBy(new HashPartitioner(numPartitions))*/
+			.map(genNewID)
 
 		val numEls = matSize.nrows * matSize.ncols;
 
@@ -359,6 +379,7 @@ object BlockMat {
 
 		val blocks: RDD[(BlockID,BDM[Double])] = blockNums
 			.zip(dat)
+			.partitionBy(new HashPartitioner(numPartitions))
 			.persist(StorageLevel.MEMORY_AND_DISK_SER);
 
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
@@ -366,8 +387,9 @@ object BlockMat {
 
 	def randSPD(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat = 
 	{
+		val nrows: Double = matSize.nrows.toDouble;
 		val A = BlockMat.rand(sc,matSize,bsize);
-		A + A.transpose() + BlockMat.eye(sc,matSize,bsize)*10;
+		A + A.transpose() + BlockMat.eye(sc,matSize,bsize)*nrows;
 	}
 
 	// create uniform BlockMat with given generator function f()=>BDM[Double]
@@ -425,31 +447,84 @@ object BlockMat {
 		BlockMat.generate(sc,matSize,bsize,f);
 	}
 
-	// only works for square matrices w/ square blocks
 	def eye(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat =
 	{
 		val nblocksRow: Long = matSize.nrows / bsize.nrows;
 		val nblocksCol: Long = matSize.ncols / bsize.ncols;
 		val numPartitions: Int = (nblocksRow * nblocksCol).toInt;
 
-		def genNewID(n: Int): BlockID = 
-			BlockID(
-				n.toLong % nblocksRow,
-				n.toLong / nblocksRow,
-				nblocksRow,
-				nblocksCol
-				);
-
 		def genNewBlock(num: Int): (BlockID,BDM[Double]) =
 		{
-			val id: BlockID = genNewID(num); 
+			val n = num.toLong;
+			val i_block: Long = n % nblocksRow;
+			val j_block: Long = n / nblocksRow;
+			println("block:"+ i_block + "," + j_block);
+
+			//absolute indices of top left element in block
+			val i_min: Long = i_block * bsize.nrows;
+			val j_min: Long = j_block * bsize.ncols;
+			println("i,j_min:"+ i_min + "," + j_min);
+
+			//absolute indices of bottom right element in block
+			val i_max: Long = i_min + (bsize.nrows - 1);
+			val j_max: Long = j_min + (bsize.ncols - 1);
+			println("i,j_max:"+ i_max + "," + j_max);
+
+			def genNewID(): BlockID = 
+			{
+				BlockID(
+					i_block,
+					j_block,
+					nblocksRow,
+					nblocksCol
+					);
+			}
+
+			def blockIntersectsDiag(): Boolean = (i_max >= j_min) && (j_max >= i_min);
+
+			def fillBlockEye(): BDM[Double] =
+			{
+				val numel: Int = (bsize.nrows * bsize.ncols).toInt;
+				val array = Array.ofDim[Double](numel);
+				val i_first = {
+					if (i_min <= j_min)
+						j_min;
+					else
+						i_min;
+				}
+				val numIntersections = List(j_max,i_min).min - i_first + 1;
+				/*{*/
+					/*if (i_min <= j_min)*/
+					/*	i_max - i_first + 1;*/
+					/*else*/
+						/*j_max - i_first + 1;*/
+				/*}*/
+
+				// set diagonal elements in block to on
+				val offset: Int = (i_first - i_min).toInt;
+				val stride: Int = bsize.nrows.toInt + 1;
+				println("offset: " + offset);
+				println("k*stride: k*" + stride + "for " + numIntersections + " numInt");
+				for (k <- 0 to numIntersections.toInt - 1) {
+					array(offset + k*stride) = 1.0;
+				}
+				// return breeze matrix
+				new BDM(bsize.nrows.toInt,bsize.ncols.toInt,array);
+			}
+
 			val block: BDM[Double] = {
-				if (id.row == id.col)
-					BDM.eye(bsize.nrows.toInt);
+				if (blockIntersectsDiag)
+					fillBlockEye();
 				else
 					BDM.zeros(bsize.nrows.toInt,bsize.ncols.toInt);
 			}
-			(id,block)
+			/*val block: BDM[Double] = {*/
+			/*	if (id.row == id.col)*/
+			/*		BDM.eye(bsize.nrows.toInt);*/
+			/*	else*/
+			/*		BDM.zeros(bsize.nrows.toInt,bsize.ncols.toInt);*/
+			/*}*/
+			(genNewID(),block)
 		}
 
 		val blocks: RDD[(BlockID,BDM[Double])] = sc

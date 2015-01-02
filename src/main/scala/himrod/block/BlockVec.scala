@@ -50,6 +50,7 @@ case class BlockVec(
 	def scalarMap(f: (BDV[Double]) => BDV[Double]): BlockVec = {
 		BlockVec(size,bsize,blocks.mapValues{f});
 	}
+
 	def +(a: Double): BlockVec = 
 	{
 		val f = (m: BDV[Double]) => m+a;
@@ -223,6 +224,10 @@ case class BlockVec(
 		println("");
 	}
 
+	def saveAsObjectFile(fout: String) = {
+		blocks.saveAsObjectFile(fout);
+	}
+
 	def saveAsTextFile(fout: String) = 
 	{
 		blocks.map(x => PrintColBlock(x._1,x._2))
@@ -231,6 +236,17 @@ case class BlockVec(
 }
 
 object BlockVec {
+
+	def fromObjectFile(
+		sc: SparkContext,
+		fin: String,
+		vecSize: Long,
+		bsize: Long): BlockVec = 
+	{
+		val nblocks: Long = (1.0 * vecSize / bsize).ceil.toLong;
+		val blocks: RDD[(BlockID, BDV[Double])] = sc.objectFile(fin);
+		BlockVec(BlockSize(vecSize,1L),BlockSize(bsize,1L),blocks);
+	}
 
 	def fromTextFile(
 		sc: SparkContext, 
@@ -399,9 +415,6 @@ object BlockVec {
 		result.sum;
 	}
 
-	// shorter form for v'*v
-	/*def normSquared(v: BlockVec): Double = sum(pow(v,2));*/
-
 	// default vector 2-norm
 	def norm(v: BlockVec): Double = math.sqrt(BlockVec.normSquared(v));
 
@@ -409,6 +422,4 @@ object BlockVec {
 	def norm(v: BlockVec, p: Double): Double = {
 		math.pow(sum(pow(v,p)), 1.0/p);
 	}
-
-
 }		

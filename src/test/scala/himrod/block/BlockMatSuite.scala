@@ -255,11 +255,21 @@ class BlockMatSuite extends FunSuite with LocalSparkContext
 	test("Eye Matrix")
 	{
 		val I = BlockMat.eye(sc,matSize,bsize);
-		println("Identity Matrix");
+		println("Square Identity Matrix");
 		I.print
 
-		println("Identity Matrix plus rand");
-		(I + BlockMat.rand(sc,matSize,bsize)).print;
+		/*println("Identity Matrix plus rand");*/
+		/*(I + BlockMat.rand(sc,matSize,bsize)).print;*/
+
+		val I2 = BlockMat.eye(sc,matSize,BlockSize(1L,N));
+		println("Row-Block Identity Matrix");
+		I2.print
+
+		println("Row-Block Identity Matrix");
+		val I3 = BlockMat.eye(sc,BlockSize(6L,4L),BlockSize(3L,2L));
+		println("6x4 in 3x2 blocks Identity Matrix");
+		I3.print
+
 	}
 	/*test("Matrix of Different BlockSize from File")*/
 	/*{*/
