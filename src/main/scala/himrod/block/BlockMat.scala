@@ -458,17 +458,14 @@ object BlockMat {
 			val n = num.toLong;
 			val i_block: Long = n % nblocksRow;
 			val j_block: Long = n / nblocksRow;
-			println("block:"+ i_block + "," + j_block);
 
 			//absolute indices of top left element in block
 			val i_min: Long = i_block * bsize.nrows;
 			val j_min: Long = j_block * bsize.ncols;
-			println("i,j_min:"+ i_min + "," + j_min);
 
 			//absolute indices of bottom right element in block
 			val i_max: Long = i_min + (bsize.nrows - 1);
 			val j_max: Long = j_min + (bsize.ncols - 1);
-			println("i,j_max:"+ i_max + "," + j_max);
 
 			def genNewID(): BlockID = 
 			{
@@ -480,19 +477,25 @@ object BlockMat {
 					);
 			}
 
-			def blockIntersectsDiag(): Boolean = (i_max >= j_min) && (j_max >= i_min);
+			def blockIsSquare(): Boolean = 
+				(bsize.nrows == bsize.ncols) && (matSize.nrows == matSize.ncols);
+
+			def blockIntersectsDiag(): Boolean = 
+				(i_max >= j_min) && (j_max >= i_min);
 
 			def fillBlockEye(): BDM[Double] =
 			{
 				val numel: Int = (bsize.nrows * bsize.ncols).toInt;
 				val array = Array.ofDim[Double](numel);
+
+				// get the first row of intersection
 				val i_first = {
 					if (i_min <= j_min)
 						j_min;
 					else
 						i_min;
 				}
-				val numIntersections = List(j_max,i_min).min - i_first + 1;
+				val numIntersections = List(j_max - i_first,i_max - i_first).min + 1;
 				/*{*/
 					/*if (i_min <= j_min)*/
 					/*	i_max - i_first + 1;*/
@@ -501,15 +504,14 @@ object BlockMat {
 				/*}*/
 
 				// set diagonal elements in block to on
-				val offset: Int = (i_first - i_min).toInt;
+				val nrows: Int = bsize.nrows.toInt;
+				val offset: Int = ( (i_first - j_min)*nrows + (i_first - i_min)).toInt;
 				val stride: Int = bsize.nrows.toInt + 1;
-				println("offset: " + offset);
-				println("k*stride: k*" + stride + "for " + numIntersections + " numInt");
 				for (k <- 0 to numIntersections.toInt - 1) {
 					array(offset + k*stride) = 1.0;
 				}
 				// return breeze matrix
-				new BDM(bsize.nrows.toInt,bsize.ncols.toInt,array);
+				new BDM(nrows,bsize.ncols.toInt,array);
 			}
 
 			val block: BDM[Double] = {
