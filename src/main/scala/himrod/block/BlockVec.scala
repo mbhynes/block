@@ -5,6 +5,8 @@ import breeze.linalg.{DenseMatrix => BDM}
 import breeze.linalg._
 import breeze.numerics
 
+import org.apache.spark.Logging
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
@@ -28,7 +30,7 @@ case class BlockVec(
 	val size: BlockSize, // size of matrix in blocks
 	val bsize: BlockSize, //size of uniform blocks
 	val blocks: RDD[(BlockID,BDV[Double])] // RDD of vector blocks 
-	) extends Serializable 
+	) extends Serializable with Logging
 {
 	/*def persist() = A.persist(StorageLevel.MEMORY_AND_DISK_SER);*/
 
@@ -135,7 +137,11 @@ case class BlockVec(
 			BlockVec(size,bsize,uv);
 		}
 		else
+		{
+			logError("BlockVecs are not similarly partitioned:" + size + " and " + other.size);
+			logError("BlockVecs' bsize:" + bsize + " and " + other.bsize);
 			throw BlockVecSizeMismatchException("BlockVecs are not similarly partitioned.");
+		}
 	}
 
 	def *(other: BlockVec): BlockVec =
@@ -200,7 +206,10 @@ case class BlockVec(
 			BlockVec(newSize,newBSize,vA);
 		}
 		else
+		{
+			logError("BlockVec and BlockMat are not similarly partitioned:" + size.transpose + " and " + M.size);
 			throw BlockVecSizeMismatchException("BlockVecs are not similarly partitioned.");
+		}
 	}
 
 	// metrics + operations
@@ -245,7 +254,7 @@ object BlockVec {
 	{
 		val nblocks: Long = (1.0 * vecSize / bsize).ceil.toLong;
 		val blocks: RDD[(BlockID, BDV[Double])] = sc.objectFile(fin);
-		BlockVec(BlockSize(vecSize,1L),BlockSize(bsize,1L),blocks);
+		BlockVec(BlockSize(nblocks,1L),BlockSize(bsize,1L),blocks);
 	}
 
 	def fromTextFile(

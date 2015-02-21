@@ -5,6 +5,8 @@ import breeze.linalg.{DenseMatrix => BDM}
 import breeze.linalg._
 import breeze.numerics
 
+import org.apache.spark.Logging
+
 import org.apache.spark.rdd.RDD
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
@@ -28,7 +30,7 @@ case class BlockMat(
 	val size: BlockSize, // size of matrix in blocks
 	val bsize: BlockSize, //size of uniform blocks
 	val blocks: RDD[(BlockID,BDM[Double])]
-	) extends Serializable 
+	) extends Serializable with Logging
 {
 	/*override def equals(other: Any): Boolean = */
 	/*{*/
@@ -138,7 +140,10 @@ case class BlockMat(
 			BlockMat(size,bsize,result)
 		}
 		else
+		{
+			logError("BlockMats are not similarly partitioned:" + size + " and " + other.size);
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
+		}
 	}
 
 	def -(other: BlockMat): BlockMat =
@@ -200,7 +205,10 @@ case class BlockMat(
 			BlockVec(newSize,bsize.product(vec.bsize),Av);
 		}
 		else
+		{
+			logError("BlockMats are not similarly partitioned:" + size + " and " + vec.size);
 			throw BlockMatSizeMismatchException("BlockMats are not similarly partitioned.");
+		}
 	}
 
 	def multiply(other: BlockMat): BlockMat =
@@ -385,6 +393,7 @@ object BlockMat {
 		BlockMat(BlockSize(nblocksRow,nblocksCol),bsize,blocks);
 	}
 
+	// must be a square matrix
 	def randSPD(sc: SparkContext, matSize: BlockSize, bsize: BlockSize): BlockMat = 
 	{
 		val nrows: Double = matSize.nrows.toDouble;
